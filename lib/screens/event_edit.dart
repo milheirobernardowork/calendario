@@ -711,7 +711,9 @@ class _EventEditScreenState extends State<EventEditScreen> {
             : Column(
                 children: [
                   Expanded(child: _form(context)),
-                  if (!keyboard) ...[
+                  // No telemóvel, ao criar um evento, só o formulário.
+                  if (!keyboard &&
+                      !(widget.event == null && box.maxWidth < 600)) ...[
                     Divider(height: 1, color: divider),
                     Expanded(child: week),
                   ],

@@ -116,6 +116,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               store: store,
               selectedDay: _selectedDay,
               onDaySelected: (d) => setState(() => _selectedDay = d),
+              onSwipeRight: () => _goTab(1),
             ),
             TasksPage(store: store, visit: _taskVisits),
             EventsPage(store: store),
@@ -200,11 +201,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ],
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _add,
-        icon: const Icon(Icons.add),
-        label: Text(const ['Evento', 'Tarefa', 'Evento'][_tab]),
-      ),
+      // No telemóvel, no calendário cria-se um evento tocando num dia.
+      floatingActionButton: _tab == 0 && MediaQuery.sizeOf(context).width < 600
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _add,
+              icon: const Icon(Icons.add),
+              label: Text(const ['Evento', 'Tarefa', 'Evento'][_tab]),
+            ),
     );
   }
 }

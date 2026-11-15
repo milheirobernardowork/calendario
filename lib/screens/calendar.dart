@@ -39,11 +39,15 @@ class CalendarPage extends StatefulWidget {
     required this.store,
     required this.selectedDay,
     required this.onDaySelected,
+    this.onSwipeRight,
   });
 
   final Store store;
   final DateTime selectedDay;
   final ValueChanged<DateTime> onDaySelected;
+
+  /// Deslizar o dedo para a direita (no telemóvel).
+  final VoidCallback? onSwipeRight;
 
   @override
   State<CalendarPage> createState() => _CalendarPageState();
@@ -55,11 +59,184 @@ class _CalendarPageState extends State<CalendarPage> {
   bool _weekView = false;
 
   final _gridScroll = ScrollController();
+
+  // --- Telemóvel: semanas seguidas, a começar na semana atual. ---------
+
+  /// Ecrã estreito: calendário contínuo em vez de mês a mês.
+  bool _continuous = false;
+
+  /// Semana que aparece no topo ao abrir (ou depois de "Hoje" / escolher
+  /// mês ou ano). As outras ficam acima e abaixo dela.
+  late DateTime _anchorWeek = _monday(dateOnly(DateTime.now()));
+  final _phoneScroll = ScrollController();
+  Key _centerKey = UniqueKey();
+  double _phoneWidth = 0;
+
+  static final _firstWeek = _monday(DateTime(2000, 1, 3));
+  static final _lastWeek = _monday(DateTime(2100, 12, 27));
+
+  static const _monthLabelHeight = 34.0;
+
+  /// A semana tem um dia 1? Então leva por cima o nome do mês.
+  static bool _startsMonth(DateTime week) => [
+    for (var i = 0; i < 7; i++) DateTime(week.year, week.month, week.day + i),
+  ].any((d) => d.day == 1);
+
+  double _phoneWeekHeight(DateTime week) {
+    final rows = _layoutWeek(week).rows;
+    final h = _cellChrome + rows * EventChipBox.extent;
+    return (h < 56 ? 56.0 : h) + (_startsMonth(week) ? _monthLabelHeight : 0);
+  }
+
+  /// Semana no topo do ecrã, a partir da posição do scroll.
+  DateTime _topWeek() {
+    if (!_phoneScroll.hasClients) return _anchorWeek;
+    var offset = _phoneScroll.offset;
+    var week = _anchorWeek;
+    if (offset >= 0) {
+      while (week.isBefore(_lastWeek)) {
+        final h = _phoneWeekHeight(week);
+        if (offset < h) break;
+        offset -= h;
+        week = DateTime(week.year, week.month, week.day + 7);
+      }
+    } else {
+      while (offset < 0 && week.isAfter(_firstWeek)) {
+        week = DateTime(week.year, week.month, week.day - 7);
+        offset += _phoneWeekHeight(week);
+      }
+    }
+    return week;
+  }
+
+  void _onPhoneScroll() {
+    // O mês/ano dos botões acompanha a semana que está no topo.
+    final top = _topWeek();
+    final mid = DateTime(top.year, top.month, top.day + 3);
+    if (mid.month != _focused.month || mid.year != _focused.year) {
+      setState(() => _focused = mid);
+    }
+  }
+
+  /// Põe a semana de [day] no topo.
+  void _anchorTo(DateTime day) => setState(() {
+    _anchorWeek = _monday(dateOnly(day));
+    _focused = day;
+    _centerKey = UniqueKey();
+    if (_phoneScroll.hasClients) _phoneScroll.jumpTo(0);
+  });
+
+  Widget _phoneHeader(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 4, 8, 0),
+    child: Row(
+      children: [
+        _monthButton(context),
+        _yearButton(context),
+        const Spacer(),
+        TextButton(
+          onPressed: () => _anchorTo(dateOnly(DateTime.now())),
+          child: const Text('Hoje'),
+        ),
+      ],
+    ),
+  );
+
+  Widget _phoneWeekRow(BuildContext context, DateTime week, DateTime today) {
+    final layout = _layoutWeek(week);
+    final rows = layout.rows;
+    final h = _cellChrome + rows * EventChipBox.extent;
+    final row = _week(
+      context,
+      layout,
+      h < 56 ? 56.0 : h,
+      _phoneWidth,
+      today,
+      true,
+    );
+    if (!_startsMonth(week)) return row;
+    final first = layout.days.firstWhere((d) => d.day == 1);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          height: _monthLabelHeight,
+          alignment: Alignment.bottomLeft,
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+          child: Text(
+            fmtMonth(first),
+            style: Theme.of(context).textTheme.titleMedium!
+                .copyWith(fontWeight: FontWeight.w600),
+          ),
+        ),
+        row,
+      ],
+    );
+  }
+
+  Widget _phone(BuildContext context, double width) {
+    _phoneWidth = width;
+    final today = dateOnly(DateTime.now());
+    final past = daysBetween(_firstWeek, _anchorWeek) ~/ 7;
+    final future = daysBetween(_anchorWeek, _lastWeek) ~/ 7 + 1;
+    return GestureDetector(
+      // Deslizar para a direita abre as tarefas.
+      onHorizontalDragEnd: (d) {
+        if ((d.primaryVelocity ?? 0) > 300) widget.onSwipeRight?.call();
+      },
+      child: Column(
+        children: [
+          _phoneHeader(context),
+          _weekdays(context),
+          Expanded(
+            child: CustomScrollView(
+              controller: _phoneScroll,
+              center: _centerKey,
+              slivers: [
+                SliverList.builder(
+                  itemCount: past,
+                  itemBuilder: (context, i) => _phoneWeekRow(
+                    context,
+                    DateTime(
+                      _anchorWeek.year,
+                      _anchorWeek.month,
+                      _anchorWeek.day - 7 * (i + 1),
+                    ),
+                    today,
+                  ),
+                ),
+                SliverList.builder(
+                  key: _centerKey,
+                  itemCount: future,
+                  itemBuilder: (context, i) => _phoneWeekRow(
+                    context,
+                    DateTime(
+                      _anchorWeek.year,
+                      _anchorWeek.month,
+                      _anchorWeek.day + 7 * i,
+                    ),
+                    today,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   DateTime _lastWheel = DateTime(0);
+
+  @override
+  void initState() {
+    super.initState();
+    _phoneScroll.addListener(_onPhoneScroll);
+  }
 
   @override
   void dispose() {
     _gridScroll.dispose();
+    _phoneScroll.dispose();
     super.dispose();
   }
 
@@ -114,6 +291,10 @@ class _CalendarPageState extends State<CalendarPage> {
   });
 
   void _select(DateTime day) {
+    if (_continuous) {
+      widget.onDaySelected(dateOnly(day));
+      return;
+    }
     setState(() => _focused = day);
     widget.onDaySelected(dateOnly(day));
   }
@@ -158,8 +339,9 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   /// Vai para o mês [month] do ano [year] (dia 1).
-  void _jumpTo(int year, int month) =>
-      setState(() => _focused = DateTime(year, month));
+  void _jumpTo(int year, int month) => _continuous
+      ? _anchorTo(DateTime(year, month))
+      : setState(() => _focused = DateTime(year, month));
 
   static const _monthNames = [
     'janeiro',
@@ -521,7 +703,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final hidden = singles.length - shown + hiddenBars;
     final selected = day == widget.selectedDay;
     final isToday = day == today;
-    final outside = !_weekView && day.month != _focused.month;
+    final outside = !_continuous && !_weekView && day.month != _focused.month;
 
     return DragTarget<_Drag>(
       onWillAcceptWithDetails: (d) => d.data.day != day,
@@ -776,6 +958,8 @@ class _CalendarPageState extends State<CalendarPage> {
         onPointerSignal: _onWheel,
         child: LayoutBuilder(
           builder: (context, box) {
+            _continuous = box.maxWidth < 600;
+            if (_continuous) return _phone(context, box.maxWidth);
             if (box.maxWidth >= 840) {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
