@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../models.dart';
@@ -30,6 +31,34 @@ class _CalendarPageState extends State<CalendarPage> {
   /// Um dia qualquer do período (mês ou semana) que está à vista.
   late DateTime _focused = widget.selectedDay;
   bool _weekView = false;
+
+  final _gridScroll = ScrollController();
+  DateTime _lastWheel = DateTime(0);
+
+  @override
+  void dispose() {
+    _gridScroll.dispose();
+    super.dispose();
+  }
+
+  /// Roda do rato: muda de mês (ou semana). Se a grelha não couber no ecrã,
+  /// primeiro rola até ao fim e só depois muda.
+  void _onWheel(PointerSignalEvent e) {
+    if (e is! PointerScrollEvent || e.scrollDelta.dy == 0) return;
+    final forward = e.scrollDelta.dy > 0;
+    if (_gridScroll.hasClients) {
+      final p = _gridScroll.position;
+      final canScroll = forward
+          ? p.pixels < p.maxScrollExtent - 1
+          : p.pixels > p.minScrollExtent + 1;
+      if (canScroll) return;
+    }
+    // Um passo de cada vez, mesmo que a roda envie vários eventos seguidos.
+    final now = DateTime.now();
+    if (now.difference(_lastWheel) < const Duration(milliseconds: 300)) return;
+    _lastWheel = now;
+    _step(forward ? 1 : -1);
+  }
 
   static DateTime _monday(DateTime d) =>
       DateTime(d.year, d.month, d.day - (d.weekday - 1));
@@ -162,12 +191,21 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
-  /// Grelha de semanas. Cada semana cresce até caber o dia com mais eventos;
-  /// [minRowHeight] é a altura mínima de cada uma.
-  Widget _grid(BuildContext context, double minRowHeight, double width) {
+  /// Grelha de semanas. Cada semana tem pelo menos [minRowHeight] e cresce
+  /// até caber o dia com mais eventos. Com [fill], as semanas repartem essa
+  /// altura: as mais vazias encolhem para dar espaço às mais cheias, e só se
+  /// nem assim couber é que a grelha passa a rolar.
+  Widget _grid(
+    BuildContext context,
+    double width, {
+    double minRowHeight = 0,
+    double? fill,
+  }) {
     final today = dateOnly(DateTime.now());
     final compact = width / 7 < 90;
-    double height(DateTime week) {
+    final weeks = _weeks;
+    final needed = <DateTime, double>{};
+    for (final week in weeks) {
       var most = 0;
       for (var i = 0; i < 7; i++) {
         final n = widget.store
@@ -175,13 +213,28 @@ class _CalendarPageState extends State<CalendarPage> {
             .length;
         if (n > most) most = n;
       }
-      final needed = _cellChrome + most * EventChipBox.extent;
-      return needed > minRowHeight ? needed : minRowHeight;
+      final h = _cellChrome + most * EventChipBox.extent;
+      needed[week] = h > minRowHeight ? h : minRowHeight;
     }
+    var share = 0.0;
+    if (fill != null) {
+      // Altura comum das semanas que não precisam de mais do que isso.
+      share = fill / weeks.length;
+      for (var pass = 0; pass < weeks.length; pass++) {
+        final big = needed.values.where((h) => h > share);
+        final rest = weeks.length - big.length;
+        if (rest == 0) break;
+        final next = (fill - big.fold(0.0, (a, h) => a + h)) / rest;
+        if (next >= share) break;
+        share = next;
+      }
+    }
+    double height(DateTime week) =>
+        needed[week]! > share ? needed[week]! : share;
 
     return Column(
       children: [
-        for (final week in _weeks)
+        for (final week in weeks)
           SizedBox(
             height: height(week),
             child: Row(
@@ -316,62 +369,67 @@ class _CalendarPageState extends State<CalendarPage> {
     final divider = Theme.of(context).colorScheme.outlineVariant;
     return ListenableBuilder(
       listenable: widget.store,
-      builder: (context, _) => LayoutBuilder(
-        builder: (context, box) {
-          if (box.maxWidth >= 840) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: Column(
-                    children: [
-                      _header(context),
-                      _weekdays(context),
-                      Expanded(
-                        // As semanas enchem a altura disponível e, se houver
-                        // muitos eventos, crescem e a grelha passa a rolar.
-                        child: LayoutBuilder(
-                          builder: (context, area) => SingleChildScrollView(
-                            child: _grid(
-                              context,
-                              area.maxHeight / _weeks.length,
-                              area.maxWidth,
+      builder: (context, _) => Listener(
+        onPointerSignal: _onWheel,
+        child: LayoutBuilder(
+          builder: (context, box) {
+            if (box.maxWidth >= 840) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Column(
+                      children: [
+                        _header(context),
+                        _weekdays(context),
+                        Expanded(
+                          // As semanas enchem a altura disponível e, se houver
+                          // muitos eventos, crescem e a grelha passa a rolar.
+                          child: LayoutBuilder(
+                            builder: (context, area) => SingleChildScrollView(
+                              controller: _gridScroll,
+                              child: _grid(
+                                context,
+                                area.maxWidth,
+                                fill: area.maxHeight,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                VerticalDivider(width: 1, color: divider),
-                SizedBox(
-                  width: 320,
+                  VerticalDivider(width: 1, color: divider),
+                  SizedBox(
+                    width: 320,
+                    child: ListView(
+                      padding: const EdgeInsets.only(bottom: 88),
+                      children: [_dayHeader(context), ..._dayEvents(context)],
+                    ),
+                  ),
+                ],
+              );
+            }
+            return Column(
+              children: [
+                _header(context),
+                _weekdays(context),
+                Expanded(
                   child: ListView(
+                    controller: _gridScroll,
                     padding: const EdgeInsets.only(bottom: 88),
-                    children: [_dayHeader(context), ..._dayEvents(context)],
+                    children: [
+                      _grid(context, box.maxWidth, minRowHeight: 56),
+                      Divider(height: 1, color: divider),
+                      _dayHeader(context),
+                      ..._dayEvents(context),
+                    ],
                   ),
                 ),
               ],
             );
-          }
-          return Column(
-            children: [
-              _header(context),
-              _weekdays(context),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.only(bottom: 88),
-                  children: [
-                    _grid(context, 56, box.maxWidth),
-                    Divider(height: 1, color: divider),
-                    _dayHeader(context),
-                    ..._dayEvents(context),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
+          },
+        ),
       ),
     );
   }

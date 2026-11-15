@@ -77,8 +77,8 @@ class EventChipBox extends StatelessWidget {
     this.highlight = false,
   });
 
-  /// Altura ocupada por cada bloco (20 + margens).
-  static const extent = 22.0;
+  /// Altura ocupada por cada bloco (24 + margens).
+  static const extent = 26.0;
 
   final Event event;
   final DateTime day;
@@ -93,24 +93,21 @@ class EventChipBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final color = eventColor(event.color);
-    // Dia inteiro: bloco cheio. Com hora: fundo suave e barra de cor.
-    final solid = event.allDay;
     final showTime = !compact && !event.allDay && dateOnly(event.start) == day;
     return Container(
-      height: 20,
+      height: 24,
       margin: const EdgeInsets.fromLTRB(2, 1, 2, 1),
       foregroundDecoration: highlight
           ? BoxDecoration(
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: scheme.onSurface, width: 1.5),
+              border: Border.all(color: scheme.onSurface, width: 2),
             )
           : null,
       decoration: BoxDecoration(
-        color: solid ? color : color.withValues(alpha: 0.18),
+        color: color,
         borderRadius: BorderRadius.circular(4),
-        border: solid ? null : Border(left: BorderSide(color: color, width: 3)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 6),
       alignment: Alignment.centerLeft,
       child: Text(
         showTime ? '${fmtTime(event.start)} ${event.title}' : event.title,
@@ -119,11 +116,11 @@ class EventChipBox extends StatelessWidget {
         overflow: TextOverflow.clip,
         textScaler: TextScaler.noScaling,
         style: TextStyle(
-          fontSize: compact ? 10 : 12,
+          fontSize: compact ? 10.5 : 13,
           height: 1.1,
-          color: solid ? onColor(color) : scheme.onSurface,
+          color: onColor(color),
           decoration: TextDecoration.none,
-          fontWeight: highlight ? FontWeight.w700 : FontWeight.w400,
+          fontWeight: highlight ? FontWeight.w700 : FontWeight.w500,
         ),
       ),
     );
