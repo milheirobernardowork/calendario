@@ -229,8 +229,29 @@ class _CalendarPageState extends State<CalendarPage> {
         share = next;
       }
     }
-    double height(DateTime week) =>
-        needed[week]! > share ? needed[week]! : share;
+    final heights = {
+      for (final w in weeks) w: needed[w]! > share ? needed[w]! : share,
+    };
+    final total = needed.values.fold(0.0, (a, h) => a + h);
+    if (fill != null && total > fill) {
+      // Nem assim cabe: encolher as semanas que já passaram, mantendo a
+      // atual e as seguintes completas. Os eventos escondidos ficam "+N".
+      final thisWeek = _monday(today);
+      final past = weeks.where((w) => w.isBefore(thisWeek)).toList();
+      const floor = _cellChrome + EventChipBox.extent;
+      double pastTotal(double cap) =>
+          past.fold(0.0, (a, w) => a + (needed[w]! < cap ? needed[w]! : cap));
+      final target = pastTotal(double.infinity) - (total - fill);
+      var lo = floor, hi = fill;
+      for (var i = 0; i < 24; i++) {
+        final mid = (lo + hi) / 2;
+        pastTotal(mid) > target ? hi = mid : lo = mid;
+      }
+      for (final w in past) {
+        if (needed[w]! > lo) heights[w] = lo;
+      }
+    }
+    double height(DateTime week) => heights[week]!;
 
     return Column(
       children: [
@@ -247,6 +268,9 @@ class _CalendarPageState extends State<CalendarPage> {
                       DateTime(week.year, week.month, week.day + i),
                       today,
                       compact,
+                      // Quantos blocos cabem na altura desta semana.
+                      ((height(week) - _cellChrome + 0.5) / EventChipBox.extent)
+                          .floor(),
                     ),
                   ),
               ],
@@ -264,9 +288,15 @@ class _CalendarPageState extends State<CalendarPage> {
     DateTime day,
     DateTime today,
     bool compact,
+    int room,
   ) {
     final scheme = Theme.of(context).colorScheme;
     final events = widget.store.eventsOn(day);
+    // Se não couberem todos, a última linha passa a "+N".
+    final shown = events.length <= room
+        ? events.length
+        : (room - 1).clamp(0, events.length);
+    final hidden = events.length - shown;
     final selected = day == widget.selectedDay;
     final isToday = day == today;
     final outside = !_weekView && day.month != _focused.month;
@@ -322,7 +352,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                for (final e in events)
+                for (final e in events.take(shown))
                   _EventChip(
                     event: e,
                     day: day,
@@ -330,6 +360,20 @@ class _CalendarPageState extends State<CalendarPage> {
                     faded: outside,
                     onTap: () =>
                         openEventEditor(context, widget.store, event: e),
+                  ),
+                if (hidden > 0 && room > 0)
+                  SizedBox(
+                    height: EventChipBox.extent,
+                    child: Center(
+                      child: Text(
+                        '+$hidden',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
