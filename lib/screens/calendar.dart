@@ -76,7 +76,7 @@ class _CalendarPageState extends State<CalendarPage> {
     }
     // Um passo de cada vez, mesmo que a roda envie vários eventos seguidos.
     final now = DateTime.now();
-    if (now.difference(_lastWheel) < const Duration(milliseconds: 300)) return;
+    if (now.difference(_lastWheel) < const Duration(milliseconds: 200)) return;
     _lastWheel = now;
     _step(forward ? 1 : -1);
   }

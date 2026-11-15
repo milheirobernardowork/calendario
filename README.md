@@ -48,6 +48,21 @@ flutter build apk --release
   é criada uma Release com `WolfCal-Setup.exe` e `WolfCal.apk`. Correr um
   instalador mais recente atualiza a versão instalada, mantendo os dados.
 
+## Assinatura da app Android
+
+O APK é assinado com uma chave própria, para que cada versão nova se instale
+por cima da anterior. A chave **não** está no repositório: o workflow lê-a de
+quatro segredos (Settings → Secrets and variables → Actions):
+
+| Segredo | Conteúdo |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | o ficheiro `.jks` em base64 |
+| `ANDROID_KEYSTORE_PASSWORD` | palavra-passe do ficheiro |
+| `ANDROID_KEY_ALIAS` | alias da chave |
+| `ANDROID_KEY_PASSWORD` | palavra-passe da chave |
+
+Guarda uma cópia da chave fora do GitHub: sem ela não há atualizações.
+
 ## Como funciona a sincronização
 
 - Cada alteração é gravada localmente e marcada como pendente.

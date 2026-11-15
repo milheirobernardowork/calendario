@@ -98,6 +98,8 @@ class Store extends ChangeNotifier {
   void notifyListeners() {
     _dayCache.clear();
     _eventsCache = null;
+    _singleIndex = null;
+    _recurring = null;
     super.notifyListeners();
   }
 
@@ -138,10 +140,39 @@ class Store extends ChangeNotifier {
   List<Event> eventsOn(DateTime day) =>
       _dayCache[dateOnly(day)] ??= _computeEventsOn(day);
 
+  /// Índice dia → eventos únicos (sem repetição), refeito quando os dados
+  /// mudam. Evita percorrer todos os eventos para cada dia ao mudar de mês.
+  Map<DateTime, List<Event>>? _singleIndex;
+  List<Event>? _recurring;
+
+  void _buildIndex() {
+    final index = <DateTime, List<Event>>{};
+    final recurring = <Event>[];
+    for (final e in _events.values) {
+      if (e.isDeleted) continue;
+      if (e.recurrence != null) {
+        recurring.add(e);
+        continue;
+      }
+      // Cada dia em que o evento toca (no máximo um ano).
+      var d = dateOnly(e.start);
+      for (var i = 0; i < 366 && e.occursOn(d); i++) {
+        (index[d] ??= []).add(e);
+        d = DateTime(d.year, d.month, d.day + 1);
+      }
+    }
+    _singleIndex = index;
+    _recurring = recurring;
+  }
+
   List<Event> _computeEventsOn(DateTime day) {
-    final list = _events.values
-        .where((e) => !e.isDeleted && e.occursOn(day))
-        .toList();
+    if (_singleIndex == null) _buildIndex();
+    final d = dateOnly(day);
+    final list = [
+      ...?_singleIndex![d],
+      for (final e in _recurring!)
+        if (e.occursOn(d)) e,
+    ];
     list.sort((a, b) {
       if (a.allDay != b.allDay) return a.allDay ? -1 : 1;
       // Pela hora do dia: numa série, a data de início é a da 1.ª ocorrência.
