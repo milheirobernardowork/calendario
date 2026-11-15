@@ -42,8 +42,13 @@ flutter build apk --release
 - Windows: o resultado fica em `build/windows/x64/runner/Release/` (copia a pasta inteira).
 - Android: `build/app/outputs/flutter-apk/app-release.apk` (instala no telemóvel).
 
-Em alternativa a compilar no teu PC, o workflow `.github/workflows/build.yml`
-compila ambas as versões no GitHub Actions.
+### Sem instalar nada
+
+- **Versão web**: o workflow `pages` publica-a em
+  `https://<utilizador>.github.io/<repositório>/` a cada alteração.
+- **Instalador de Windows e APK**: em Actions → `build` → Run workflow. No fim
+  é criada uma Release com `WolfCal-Setup.exe` e `WolfCal.apk`. Correr um
+  instalador mais recente atualiza a versão instalada, mantendo os dados.
 
 ## Como funciona a sincronização
 
