@@ -12,6 +12,26 @@ import 'tasks.dart';
 /// O que é arrastado: o evento e o dia de onde foi agarrado.
 typedef _Drag = ({Event event, DateTime day});
 
+/// Troço de um evento de vários dias dentro de uma semana: colunas
+/// [from]..[to] e a linha ([lane]) onde é desenhado.
+typedef _Bar = ({Event event, int from, int to, int lane});
+
+/// Disposição de uma semana: barras dos eventos de vários dias, linhas
+/// reservadas para elas em cada dia, e os eventos de um só dia.
+class _WeekLayout {
+  _WeekLayout(this.days, this.bars, this.lanesOn, this.singles);
+
+  final List<DateTime> days;
+  final List<_Bar> bars;
+  final List<int> lanesOn;
+  final List<List<Event>> singles;
+
+  /// Linhas ocupadas no dia mais cheio.
+  int get rows =>
+      [for (var i = 0; i < 7; i++) lanesOn[i] + singles[i].length]
+          .reduce((a, b) => a > b ? a : b);
+}
+
 class CalendarPage extends StatefulWidget {
   const CalendarPage({
     super.key,
@@ -209,16 +229,10 @@ class _CalendarPageState extends State<CalendarPage> {
     final today = dateOnly(DateTime.now());
     final compact = width / 7 < 90;
     final weeks = _weeks;
+    final layouts = {for (final w in weeks) w: _layoutWeek(w)};
     final needed = <DateTime, double>{};
     for (final week in weeks) {
-      var most = 0;
-      for (var i = 0; i < 7; i++) {
-        final n = widget.store
-            .eventsOn(DateTime(week.year, week.month, week.day + i))
-            .length;
-        if (n > most) most = n;
-      }
-      final h = _cellChrome + most * EventChipBox.extent;
+      final h = _cellChrome + layouts[week]!.rows * EventChipBox.extent;
       needed[week] = h > minRowHeight ? h : minRowHeight;
     }
     var share = 0.0;
@@ -261,8 +275,90 @@ class _CalendarPageState extends State<CalendarPage> {
     return Column(
       children: [
         for (final week in weeks)
-          SizedBox(
-            height: height(week),
+          _week(context, layouts[week]!, height(week), width, today, compact),
+      ],
+    );
+  }
+
+  /// Distribui os eventos de vários dias por linhas, como barras contínuas.
+  _WeekLayout _layoutWeek(DateTime week) {
+    final days = [
+      for (var i = 0; i < 7; i++) DateTime(week.year, week.month, week.day + i),
+    ];
+    final perDay = [for (final d in days) widget.store.eventsOn(d)];
+    final segments = <({Event event, int from, int to})>[];
+    for (var i = 0; i < 7; i++) {
+      for (final e in perDay[i]) {
+        if (!e.multiDay) continue;
+        if (i > 0 && perDay[i - 1].contains(e)) continue; // já começou antes
+        var j = i;
+        while (j < 6 && perDay[j + 1].contains(e)) {
+          j++;
+        }
+        segments.add((event: e, from: i, to: j));
+      }
+    }
+    // Primeiro os que começam mais cedo; no mesmo dia, os mais longos.
+    segments.sort(
+      (a, b) => a.from != b.from
+          ? a.from - b.from
+          : (b.to - b.from) - (a.to - a.from),
+    );
+    final laneEnds = <int>[];
+    final bars = <_Bar>[];
+    for (final s in segments) {
+      var lane = laneEnds.indexWhere((end) => end < s.from);
+      if (lane < 0) {
+        lane = laneEnds.length;
+        laneEnds.add(s.to);
+      } else {
+        laneEnds[lane] = s.to;
+      }
+      bars.add((event: s.event, from: s.from, to: s.to, lane: lane));
+    }
+    final lanesOn = List.filled(7, 0);
+    for (final b in bars) {
+      for (var i = b.from; i <= b.to; i++) {
+        if (b.lane + 1 > lanesOn[i]) lanesOn[i] = b.lane + 1;
+      }
+    }
+    final singles = [
+      for (final list in perDay)
+        [
+          for (final e in list)
+            if (!e.multiDay) e,
+        ],
+    ];
+    return _WeekLayout(days, bars, lanesOn, singles);
+  }
+
+  /// Distância do topo da célula à primeira linha de eventos: borda +
+  /// margem + número do dia + espaço.
+  static const _firstRowTop = 0.5 + 3 + 24 + 2;
+
+  Widget _week(
+    BuildContext context,
+    _WeekLayout layout,
+    double height,
+    double width,
+    DateTime today,
+    bool compact,
+  ) {
+    // Quantas linhas de eventos cabem na altura desta semana.
+    final room = ((height - _cellChrome + 0.5) / EventChipBox.extent).floor();
+    final cw = width / 7;
+    final hiddenBars = List.filled(7, 0);
+    for (final b in layout.bars) {
+      if (b.lane < room) continue;
+      for (var i = b.from; i <= b.to; i++) {
+        hiddenBars[i]++;
+      }
+    }
+    return SizedBox(
+      height: height,
+      child: Stack(
+        children: [
+          Positioned.fill(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -270,18 +366,39 @@ class _CalendarPageState extends State<CalendarPage> {
                   Expanded(
                     child: _cell(
                       context,
-                      DateTime(week.year, week.month, week.day + i),
+                      layout.days[i],
                       today,
                       compact,
-                      // Quantos blocos cabem na altura desta semana.
-                      ((height(week) - _cellChrome + 0.5) / EventChipBox.extent)
-                          .floor(),
+                      room,
+                      layout.lanesOn[i],
+                      layout.singles[i],
+                      hiddenBars[i],
                     ),
                   ),
               ],
             ),
           ),
-      ],
+          for (final b in layout.bars)
+            if (b.lane < room)
+              Positioned(
+                left: b.from * cw,
+                width: (b.to - b.from + 1) * cw - 0.5,
+                top: _firstRowTop + b.lane * EventChipBox.extent,
+                height: EventChipBox.extent,
+                child: _EventChip(
+                  event: b.event,
+                  day: layout.days[b.from],
+                  compact: compact && b.from == b.to,
+                  onTap: () => openEventEditor(
+                    context,
+                    widget.store,
+                    event: b.event,
+                    day: layout.days[b.from],
+                  ),
+                ),
+              ),
+        ],
+      ),
     );
   }
 
@@ -294,14 +411,18 @@ class _CalendarPageState extends State<CalendarPage> {
     DateTime today,
     bool compact,
     int room,
+    int lanes,
+    List<Event> singles,
+    int hiddenBars,
   ) {
     final scheme = Theme.of(context).colorScheme;
-    final events = widget.store.eventsOn(day);
+    // As primeiras [lanes] linhas ficam para as barras de vários dias.
+    final reserved = lanes < room ? lanes : room;
+    final free = room - reserved;
     // Se não couberem todos, a última linha passa a "+N".
-    final shown = events.length <= room
-        ? events.length
-        : (room - 1).clamp(0, events.length);
-    final hidden = events.length - shown;
+    final fits = singles.length <= free && hiddenBars == 0;
+    final shown = fits ? singles.length : (free - 1).clamp(0, singles.length);
+    final hidden = singles.length - shown + hiddenBars;
     final selected = day == widget.selectedDay;
     final isToday = day == today;
     final outside = !_weekView && day.month != _focused.month;
@@ -366,7 +487,8 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                 ),
                 const SizedBox(height: 2),
-                for (final e in events.take(shown))
+                SizedBox(height: reserved * EventChipBox.extent),
+                for (final e in singles.take(shown))
                   _EventChip(
                     event: e,
                     day: day,
@@ -379,7 +501,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       day: day,
                     ),
                   ),
-                if (hidden > 0 && room > 0)
+                if (hidden > 0 && free > 0)
                   SizedBox(
                     height: EventChipBox.extent,
                     child: Center(

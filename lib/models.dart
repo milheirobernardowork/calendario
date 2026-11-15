@@ -194,6 +194,9 @@ class Event extends Record {
     return n < 0 ? 0 : n;
   }
 
+  /// Cada ocorrência ocupa mais do que um dia?
+  bool get multiDay => _extraDays > 0;
+
   /// Há uma ocorrência a começar no dia indicado?
   bool startsOn(DateTime day) {
     final d = dateOnly(day);
