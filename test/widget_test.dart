@@ -55,6 +55,7 @@ Task task(String title) =>
 void main() {
   dragTests();
   recurrenceTests();
+  taskFlagTests();
   test('alterações propagam-se entre dispositivos', () async {
     final server = FakeRemote();
     final pc = await device(server);
@@ -325,5 +326,30 @@ void recurrenceTests() {
     expect(phone.categories.map((c) => c.name), ['Corridas', 'Viagens']);
     expect(phone.events.single.category, EventColumn.corridasId);
     expect(server.tables['categories'], hasLength(2));
+  });
+}
+
+void taskFlagTests() {
+  test('futura, ativa e data de criação sincronizam', () async {
+    final server = FakeRemote();
+    final pc = await device(server);
+    final phone = await device(server);
+    final created = DateTime.utc(2026, 11, 1, 9);
+    final t = Task(
+      id: newId(),
+      title: 'Renovar passaporte',
+      createdAt: created,
+      updatedAt: DateTime.now().toUtc(),
+    );
+    pc.saveTask(t);
+    pc.toggleActive(t);
+    pc.toggleFuture(t); // marcar futura desmarca ativa
+    await settle(pc);
+    await phone.sync();
+    final p = phone.tasks.single;
+    expect(p.future, isTrue);
+    expect(p.active, isFalse);
+    expect(p.createdAt, created);
+    expect(p.due, isNull);
   });
 }

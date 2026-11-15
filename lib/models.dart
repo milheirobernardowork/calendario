@@ -345,14 +345,22 @@ class Task extends Record {
     this.due,
     this.done = false,
     this.active = false,
+    this.future = false,
     this.priority = 0,
+    DateTime? createdAt,
     required super.updatedAt,
     super.deletedAt,
     super.dirty,
-  });
+  }) : createdAt = createdAt ?? updatedAt;
 
   String title;
   String notes;
+
+  /// Quando foi criada (ordena a secção "Sem data").
+  final DateTime createdAt;
+
+  /// Marcada como "futura": vai para a secção do fim da lista.
+  bool future;
 
   /// Data limite (só a data), opcional.
   DateTime? due;
@@ -373,6 +381,10 @@ class Task extends Record {
       due: due == null ? null : dateOnly(DateTime.parse(due)),
       done: j['done'] as bool? ?? false,
       active: j['active'] as bool? ?? false,
+      future: j['future'] as bool? ?? false,
+      createdAt: j['created_at'] == null
+          ? null
+          : DateTime.parse(j['created_at'] as String).toUtc(),
       priority: (j['priority'] as num?)?.toInt() ?? 0,
       updatedAt: DateTime.parse(j['updated_at'] as String).toUtc(),
       deletedAt: j['deleted_at'] == null
@@ -390,6 +402,8 @@ class Task extends Record {
     'due_date': due == null ? null : _ymd(due!),
     'done': done,
     'active': active,
+    'future': future,
+    'created_at': createdAt.toIso8601String(),
     'priority': priority,
     'updated_at': updatedAt.toIso8601String(),
     'deleted_at': deletedAt?.toIso8601String(),

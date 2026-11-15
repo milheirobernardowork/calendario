@@ -199,8 +199,16 @@ class Store extends ChangeNotifier {
     );
   }
 
+  /// Ativa e futura excluem-se: marcar uma desmarca a outra.
   void toggleActive(Task t) {
     t.active = !t.active;
+    if (t.active) t.future = false;
+    saveTask(t);
+  }
+
+  void toggleFuture(Task t) {
+    t.future = !t.future;
+    if (t.future) t.active = false;
     saveTask(t);
   }
 

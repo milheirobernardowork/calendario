@@ -35,13 +35,11 @@ class TaskEditScreen extends StatefulWidget {
 class _TaskEditScreenState extends State<TaskEditScreen> {
   late final _title = TextEditingController(text: widget.task?.title ?? '');
   late final _notes = TextEditingController(text: widget.task?.notes ?? '');
-  late DateTime? _due = widget.task != null
-      ? widget.task!.due
-      // Tarefas novas ficam para hoje, a não ser que se indique outro dia.
-      : (widget.due ?? dateOnly(DateTime.now()));
+  late DateTime? _due = widget.task != null ? widget.task!.due : widget.due;
   late int _priority = widget.task?.priority ?? 0;
   late bool _done = widget.task?.done ?? false;
   late bool _active = widget.task?.active ?? false;
+  late bool _future = widget.task?.future ?? false;
 
   @override
   void initState() {
@@ -78,7 +76,9 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
         due: _due,
         done: _done,
         active: _active,
+        future: _future,
         priority: _priority,
+        createdAt: widget.task?.createdAt,
         updatedAt: DateTime.now().toUtc(),
       ),
     );
@@ -138,7 +138,23 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
               title: const Text('Ativa'),
               subtitle: const Text('Aparece no painel lateral do calendário'),
               value: _active,
-              onChanged: (v) => setState(() => _active = v),
+              onChanged: (v) => setState(() {
+                _active = v;
+                if (v) _future = false;
+              }),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.schedule),
+              title: const Text('Futura'),
+              subtitle: const Text(
+                'Vai para a secção "Futuras", no fim da lista',
+              ),
+              value: _future,
+              onChanged: (v) => setState(() {
+                _future = v;
+                if (v) _active = false;
+              }),
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,

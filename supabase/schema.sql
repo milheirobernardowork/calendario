@@ -31,6 +31,8 @@ create table if not exists public.tasks (
 
 -- Colunas acrescentadas depois da primeira versão.
 alter table public.tasks add column if not exists active boolean not null default false;
+alter table public.tasks add column if not exists future boolean not null default false;
+alter table public.tasks add column if not exists created_at timestamptz;
 alter table public.events add column if not exists recurrence jsonb;
 alter table public.events add column if not exists category text;
 

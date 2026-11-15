@@ -36,12 +36,7 @@ class _TasksPageState extends State<TasksPage> {
     final title = _quick.text.trim();
     if (title.isEmpty) return;
     widget.store.saveTask(
-      Task(
-        id: newId(),
-        title: title,
-        due: dateOnly(DateTime.now()),
-        updatedAt: DateTime.now().toUtc(),
-      ),
+      Task(id: newId(), title: title, updatedAt: DateTime.now().toUtc()),
     );
     _quick.clear();
     _quickFocus.requestFocus();
@@ -98,40 +93,25 @@ class _TasksPageState extends State<TasksPage> {
         final done = all.where((t) => t.done).toList()
           ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
-        // Domingo desta semana: o que vem depois é "futuro".
-        final sunday = DateTime(
-          today.year,
-          today.month,
-          today.day + (7 - today.weekday),
-        );
+        // "Esta semana" = hoje e os próximos 7 dias (e as atrasadas).
+        final weekEnd = DateTime(today.year, today.month, today.day + 7);
         final active = open.where((t) => t.active).toList();
         final rest = open.where((t) => !t.active).toList();
-        // Ativas primeiro, depois esta semana, depois as restantes.
+        bool isFuture(Task t) =>
+            t.future || (t.due != null && t.due!.isAfter(weekEnd));
+        final thisWeek = rest
+            .where((t) => !isFuture(t) && t.due != null)
+            .toList();
+        // Mais recentes primeiro.
+        final noDate = rest.where((t) => !isFuture(t) && t.due == null).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        final future = rest.where(isFuture).toList();
+        // Ativas, esta semana, sem data e futuras, por esta ordem.
         final sections = <(String, List<Task>, bool)>[
           ('Ativas', active, false),
-          (
-            'Atrasadas',
-            rest.where((t) => t.due != null && t.due!.isBefore(today)).toList(),
-            true,
-          ),
-          (
-            'Esta semana',
-            rest
-                .where(
-                  (t) =>
-                      t.due != null &&
-                      !t.due!.isBefore(today) &&
-                      !t.due!.isAfter(sunday),
-                )
-                .toList(),
-            false,
-          ),
-          (
-            'Futuras',
-            rest.where((t) => t.due != null && t.due!.isAfter(sunday)).toList(),
-            false,
-          ),
-          ('Sem data', rest.where((t) => t.due == null).toList(), false),
+          ('Esta semana', thisWeek, false),
+          ('Sem data', noDate, false),
+          ('Futuras', future, false),
         ];
 
         final scheme = Theme.of(context).colorScheme;
@@ -287,6 +267,15 @@ class TaskTile extends StatelessWidget {
                         'Prioridade ${priorityNames[task.priority].toLowerCase()}',
                     child: Icon(Icons.flag, color: flag, size: 20),
                   ),
+                IconButton(
+                  tooltip: task.future
+                      ? 'Deixar de ser futura'
+                      : 'Marcar como futura',
+                  isSelected: task.future,
+                  icon: Icon(Icons.schedule, color: scheme.outline),
+                  selectedIcon: Icon(Icons.schedule, color: scheme.primary),
+                  onPressed: () => store.toggleFuture(task),
+                ),
                 IconButton(
                   tooltip: task.active
                       ? 'Deixar de ser ativa'

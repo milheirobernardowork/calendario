@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
+import 'localizations.dart';
 import 'screens/home.dart';
 import 'screens/login.dart';
 import 'store.dart';
@@ -43,6 +44,10 @@ class AgendaApp extends StatelessWidget {
       brightness: b,
     ),
     useMaterial3: true,
+    // Título do seletor de data mais pequeno, para "domingo" caber inteiro.
+    datePickerTheme: const DatePickerThemeData(
+      headerHeadlineStyle: TextStyle(fontSize: 24),
+    ),
   );
 
   @override
@@ -54,7 +59,11 @@ class AgendaApp extends StatelessWidget {
       darkTheme: _theme(Brightness.dark),
       locale: const Locale('pt', 'PT'),
       supportedLocales: const [Locale('pt', 'PT')],
-      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      localizationsDelegates: const [
+        // Antes das globais, para a semana começar à segunda-feira.
+        PtPtMaterialLocalizationsDelegate(),
+        ...GlobalMaterialLocalizations.delegates,
+      ],
       home: client == null
           ? HomeScreen(store: store)
           : _AuthGate(store: store, client: client!),

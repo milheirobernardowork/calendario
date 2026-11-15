@@ -620,7 +620,6 @@ class _CalendarPageState extends State<CalendarPage> {
             id: newId(),
             title: title,
             active: true,
-            due: today,
             updatedAt: DateTime.now().toUtc(),
           ),
         ),
