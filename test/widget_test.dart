@@ -1,3 +1,4 @@
+import 'package:agenda/holidays.dart';
 import 'package:agenda/models.dart';
 import 'package:agenda/store.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -71,6 +72,7 @@ void main() {
   taskFlagTests();
   syncEfficiencyTests();
   suggestionTests();
+  holidayTests();
   test('alterações propagam-se entre dispositivos', () async {
     final server = FakeRemote();
     final pc = await device(server);
@@ -421,5 +423,56 @@ void suggestionTests() {
     expect(r.first.start.day, now.subtract(const Duration(days: 1)).day);
     expect(s.suggestTitles(''), isEmpty);
     expect(s.suggestTitles('jan').single.title, 'Jantar Nena');
+  });
+}
+
+void holidayTests() {
+  test('feriados de Portugal: Páscoa e datas móveis', () {
+    expect(easter(2026), DateTime(2026, 4, 5));
+    expect(easter(2027), DateTime(2027, 3, 28));
+    final h = portugueseHolidays(2026);
+    expect(h[DateTime(2026, 4, 3)], 'Sexta-feira Santa');
+    expect(h[DateTime(2026, 6, 4)], 'Corpo de Deus');
+    expect(h[DateTime(2026, 2, 17)], 'Carnaval');
+    expect(h[DateTime(2026, 4, 25)], 'Dia da Liberdade');
+    expect(h, hasLength(14));
+  });
+
+  test('feriado aparece no dia, verde escuro, sem duplicar', () async {
+    final s = await device(null);
+    final day = DateTime(2026, 12, 8);
+    final h = s.eventsOn(day).single;
+    expect(h.isHoliday, isTrue);
+    expect(h.title, 'Imaculada Conceição');
+    expect(h.color, holidayColor);
+    expect(s.events, isEmpty); // não é gravado
+    // Se já houver um evento com o mesmo nome, não aparece duas vezes.
+    s.saveEvent(
+      Event(
+        id: newId(),
+        title: 'Dia de Natal',
+        start: DateTime(2026, 12, 25),
+        end: DateTime(2026, 12, 25),
+        allDay: true,
+        updatedAt: DateTime.now().toUtc(),
+      ),
+    );
+    expect(s.eventsOn(DateTime(2026, 12, 25)).single.isHoliday, isFalse);
+  });
+
+  test('eliminar e anular', () async {
+    final s = await device(null);
+    final e = Event(
+      id: newId(),
+      title: 'Reunião',
+      start: DateTime(2026, 11, 20, 10),
+      end: DateTime(2026, 11, 20, 11),
+      updatedAt: DateTime.now().toUtc(),
+    );
+    s.saveEvent(e);
+    s.deleteEvent(e);
+    expect(s.events, isEmpty);
+    s.restoreEvent(e);
+    expect(s.events.single.id, e.id);
   });
 }

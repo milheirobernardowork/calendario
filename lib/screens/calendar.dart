@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../holidays.dart';
 import '../models.dart';
 import '../store.dart';
 import 'common.dart';
@@ -386,6 +387,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 top: _firstRowTop + b.lane * EventChipBox.extent,
                 height: EventChipBox.extent,
                 child: _EventChip(
+                  store: widget.store,
                   event: b.event,
                   day: layout.days[b.from],
                   compact: compact && b.from == b.to,
@@ -492,6 +494,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 SizedBox(height: reserved * EventChipBox.extent),
                 for (final e in singles.take(shown))
                   _EventChip(
+                    store: widget.store,
                     event: e,
                     day: day,
                     compact: compact,
@@ -749,10 +752,12 @@ class _EventChip extends StatelessWidget {
     required this.day,
     required this.onTap,
     required this.compact,
+    required this.store,
     this.faded = false,
   });
 
   final bool compact;
+  final Store store;
 
   final Event event;
   final DateTime day;
@@ -763,9 +768,14 @@ class _EventChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final chip = EventChipBox(event: event, day: day, compact: compact);
     final child = GestureDetector(
-      onTap: onTap,
+      // Os feriados são calculados: não se editam nem se apagam.
+      onTap: event.isHoliday ? null : onTap,
+      onSecondaryTapDown: event.isHoliday
+          ? null
+          : (d) => showEventMenu(context, store, event, day, d.globalPosition),
       child: Opacity(opacity: faded ? 0.55 : 1, child: chip),
     );
+    if (event.isHoliday) return child;
     final feedback = Material(
       color: Colors.transparent,
       elevation: 4,
@@ -833,7 +843,7 @@ class _EventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    final tile = ListTile(
       leading: Container(
         width: 6,
         height: 40,
@@ -843,11 +853,102 @@ class _EventTile extends StatelessWidget {
         ),
       ),
       title: Text(event.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(_when),
-      onTap: () {
-        onOpen?.call();
-        openEventEditor(context, store, event: event, day: day);
-      },
+      subtitle: Text(event.isHoliday ? 'Feriado' : _when),
+      onTap: event.isHoliday
+          ? null
+          : () {
+              onOpen?.call();
+              openEventEditor(context, store, event: event, day: day);
+            },
+    );
+    if (event.isHoliday) return tile;
+    return GestureDetector(
+      onSecondaryTapDown: (d) =>
+          showEventMenu(context, store, event, day, d.globalPosition),
+      child: tile,
     );
   }
+}
+
+/// Menu do botão direito sobre um evento: editar ou eliminar. Num evento
+/// repetido, eliminar pode ser só desse dia ou da série inteira. Depois de
+/// eliminar, aparece "Anular" durante uns segundos.
+Future<void> showEventMenu(
+  BuildContext context,
+  Store store,
+  Event event,
+  DateTime day,
+  Offset position,
+) async {
+  final series = event.recurrence != null;
+  final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
+  final choice = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromRect(
+      position & const Size(1, 1),
+      Offset.zero & overlay.size,
+    ),
+    items: [
+      PopupMenuItem(
+        enabled: false,
+        child: Text(
+          event.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      const PopupMenuItem(
+        value: 'edit',
+        child: ListTile(
+          leading: Icon(Icons.edit_outlined),
+          title: Text('Editar'),
+        ),
+      ),
+      PopupMenuItem(
+        value: 'delete',
+        child: ListTile(
+          leading: Icon(
+            Icons.delete_outline,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          title: Text(series ? 'Eliminar só este dia' : 'Eliminar'),
+        ),
+      ),
+      if (series)
+        PopupMenuItem(
+          value: 'delete-series',
+          child: ListTile(
+            leading: Icon(
+              Icons.delete_sweep_outlined,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            title: const Text('Eliminar a série'),
+          ),
+        ),
+    ],
+  );
+  if (choice == null || !context.mounted) return;
+  if (choice == 'edit') {
+    await openEventEditor(context, store, event: event, day: day);
+    return;
+  }
+  final before = event.recurrence;
+  final occurrence = event.occurrenceStartOn(day) ?? dateOnly(day);
+  if (choice == 'delete' && series) {
+    store.excludeOccurrence(event, occurrence);
+  } else {
+    store.deleteEvent(event);
+  }
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text('"${event.title}" eliminado'),
+      action: SnackBarAction(
+        label: 'Anular',
+        onPressed: () => store.restoreEvent(event, recurrence: before),
+      ),
+    ),
+  );
 }

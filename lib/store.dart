@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'holidays.dart';
 import 'models.dart';
 
 /// Acesso ao servidor. Abstraído para poder ser testado sem rede.
@@ -214,6 +215,12 @@ class Store extends ChangeNotifier {
       for (final e in _recurring!)
         if (e.occursOn(d)) e,
     ];
+    // Feriado do dia, a não ser que já exista um evento com o mesmo nome.
+    final holiday = holidayOn(d);
+    if (holiday != null) {
+      final name = normalizeText(holiday.title);
+      if (!list.any((e) => normalizeText(e.title) == name)) list.add(holiday);
+    }
     list.sort((a, b) {
       if (a.allDay != b.allDay) return a.allDay ? -1 : 1;
       // Pela hora do dia: numa série, a data de início é a da 1.ª ocorrência.
@@ -293,6 +300,14 @@ class Store extends ChangeNotifier {
   }
 
   void deleteEvent(Event e) => _put(_events, e, delete: true);
+
+  /// Desfaz uma eliminação (ou repõe um evento como estava).
+  void restoreEvent(Event e, {Recurrence? recurrence}) {
+    e.deletedAt = null;
+    if (recurrence != null) e.recurrence = recurrence;
+    _put(_events, e);
+  }
+
   void deleteTask(Task t) => _put(_tasks, t, delete: true);
 
   /// Desloca um evento [days] dias; com [copy] cria um duplicado e mantém
