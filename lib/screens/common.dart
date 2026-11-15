@@ -97,7 +97,7 @@ class EventChipBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final color = eventColor(event.color);
-    final showTime = !compact && !event.allDay && dateOnly(event.start) == day;
+    final showTime = !compact && !event.allDay && event.startsOn(day);
     return Container(
       height: 24,
       margin: const EdgeInsets.fromLTRB(2, 1, 2, 1),

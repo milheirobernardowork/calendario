@@ -54,6 +54,7 @@ Task task(String title) =>
 
 void main() {
   dragTests();
+  recurrenceTests();
   test('alterações propagam-se entre dispositivos', () async {
     final server = FakeRemote();
     final pc = await device(server);
@@ -191,5 +192,97 @@ void dragTests() {
     expect(copy.id, isNot(e.id));
     expect(copy.title, 'Reunião');
     expect(copy.color, 2);
+  });
+}
+
+// Eventos repetidos.
+void recurrenceTests() {
+  Event weekly(Recurrence r, {DateTime? start}) => Event(
+    id: newId(),
+    title: 'Ginásio',
+    start: start ?? DateTime(2026, 11, 16, 7, 30), // segunda-feira
+    end: (start ?? DateTime(2026, 11, 16, 7, 30)).add(const Duration(hours: 1)),
+    recurrence: r,
+    updatedAt: DateTime.now().toUtc(),
+  );
+
+  test('semanal em dias escolhidos, a cada 2 semanas', () {
+    final e = weekly(
+      const Recurrence(unit: 'week', interval: 2, weekdays: {1, 3, 5}),
+    );
+    expect(e.occursOn(DateTime(2026, 11, 16)), isTrue); // seg
+    expect(e.occursOn(DateTime(2026, 11, 17)), isFalse); // ter
+    expect(e.occursOn(DateTime(2026, 11, 18)), isTrue); // qua
+    expect(e.occursOn(DateTime(2026, 11, 20)), isTrue); // sex
+    expect(e.occursOn(DateTime(2026, 11, 23)), isFalse); // semana seguinte
+    expect(e.occursOn(DateTime(2026, 11, 30)), isTrue); // 2 semanas depois
+    expect(e.occursOn(DateTime(2026, 11, 9)), isFalse); // antes do início
+  });
+
+  test('termina após N vezes ou numa data', () {
+    final byCount = weekly(
+      const Recurrence(unit: 'week', weekdays: {1, 3}, count: 3),
+    );
+    expect(byCount.occursOn(DateTime(2026, 11, 16)), isTrue); // 1.ª
+    expect(byCount.occursOn(DateTime(2026, 11, 18)), isTrue); // 2.ª
+    expect(byCount.occursOn(DateTime(2026, 11, 23)), isTrue); // 3.ª
+    expect(byCount.occursOn(DateTime(2026, 11, 25)), isFalse);
+
+    final byDate = weekly(
+      Recurrence(unit: 'day', interval: 2, until: DateTime(2026, 11, 20)),
+    );
+    expect(byDate.occursOn(DateTime(2026, 11, 18)), isTrue);
+    expect(byDate.occursOn(DateTime(2026, 11, 19)), isFalse);
+    expect(byDate.occursOn(DateTime(2026, 11, 20)), isTrue);
+    expect(byDate.occursOn(DateTime(2026, 11, 22)), isFalse);
+  });
+
+  test('mensal e anual', () {
+    final monthly = weekly(
+      const Recurrence(unit: 'month'),
+      start: DateTime(2026, 1, 29, 9),
+    );
+    expect(monthly.occursOn(DateTime(2026, 3, 29)), isTrue);
+    expect(monthly.occursOn(DateTime(2026, 3, 28)), isFalse);
+    final yearly = weekly(
+      const Recurrence(unit: 'year'),
+      start: DateTime(2026, 12, 10),
+    );
+    expect(yearly.occursOn(DateTime(2028, 12, 10)), isTrue);
+    expect(yearly.occursOn(DateTime(2028, 12, 11)), isFalse);
+  });
+
+  test('a repetição sobrevive à sincronização', () async {
+    final server = FakeRemote();
+    final pc = await device(server);
+    final phone = await device(server);
+    pc.saveEvent(
+      weekly(const Recurrence(unit: 'week', weekdays: {2, 4}, count: 8)),
+    );
+    await settle(pc);
+    await phone.sync();
+    final r = phone.events.single.recurrence!;
+    expect(r.unit, 'week');
+    expect(r.weekdays, {2, 4});
+    expect(r.count, 8);
+    expect(phone.eventsOn(DateTime(2026, 11, 19)), hasLength(1)); // quinta
+    expect(phone.eventsOn(DateTime(2026, 11, 20)), isEmpty);
+  });
+
+  test('mover desloca a série; copiar cria um evento único', () async {
+    final s = await device(null);
+    final e = weekly(const Recurrence(unit: 'week', weekdays: {1}));
+    s.saveEvent(e);
+    // Copiar a ocorrência de 30 nov para 2 dez.
+    s.shiftEvent(e, 2, copy: true, from: DateTime(2026, 11, 30));
+    final copy = s.events.firstWhere((x) => x.id != e.id);
+    expect(copy.recurrence, isNull);
+    expect(copy.start, DateTime(2026, 12, 2, 7, 30));
+    // Mover a série um dia: passa a ser às terças.
+    s.shiftEvent(e, 1);
+    final moved = s.events.firstWhere((x) => x.id == e.id);
+    expect(moved.recurrence!.weekdays, {2});
+    expect(moved.occursOn(DateTime(2026, 11, 24)), isTrue);
+    expect(moved.occursOn(DateTime(2026, 11, 23)), isFalse);
   });
 }

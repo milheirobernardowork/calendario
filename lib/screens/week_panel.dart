@@ -15,19 +15,23 @@ class WeekPanel extends StatelessWidget {
     required this.store,
     required this.draft,
     required this.onDayTap,
+    this.anchor,
   });
 
   final Store store;
   final Event draft;
 
-  /// Tocar num dia passa o evento para esse dia.
-  final ValueChanged<DateTime> onDayTap;
+  /// Tocar num dia passa o evento para esse dia (`null` = desativado).
+  final ValueChanged<DateTime>? onDayTap;
+
+  /// Dia cuja semana é mostrada; por omissão, o início do evento.
+  final DateTime? anchor;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final s = draft.start;
+    final s = anchor ?? draft.start;
     final monday = DateTime(s.year, s.month, s.day - (s.weekday - 1));
     final sunday = DateTime(monday.year, monday.month, monday.day + 6);
     final today = dateOnly(DateTime.now());
@@ -40,7 +44,9 @@ class WeekPanel extends StatelessWidget {
       ];
       list.sort((a, b) {
         if (a.allDay != b.allDay) return a.allDay ? -1 : 1;
-        return a.start.compareTo(b.start);
+        final ta = a.start.hour * 60 + a.start.minute;
+        final tb = b.start.hour * 60 + b.start.minute;
+        return ta - tb;
       });
       return list;
     }
@@ -106,7 +112,7 @@ class WeekPanel extends StatelessWidget {
     final active = draft.occursOn(day);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => onDayTap(day),
+      onTap: onDayTap == null ? null : () => onDayTap!(day),
       child: Container(
         decoration: BoxDecoration(
           color: active ? scheme.primary.withValues(alpha: 0.08) : null,

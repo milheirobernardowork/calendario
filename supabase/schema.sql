@@ -10,6 +10,7 @@ create table if not exists public.events (
   end_at timestamptz not null,
   all_day boolean not null default false,
   color integer not null default 0,
+  recurrence jsonb,
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
@@ -29,6 +30,7 @@ create table if not exists public.tasks (
 
 -- Colunas acrescentadas depois da primeira versão.
 alter table public.tasks add column if not exists active boolean not null default false;
+alter table public.events add column if not exists recurrence jsonb;
 
 create index if not exists events_user_idx on public.events (user_id);
 create index if not exists tasks_user_idx on public.tasks (user_id);

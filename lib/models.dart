@@ -25,6 +25,103 @@ String _ymd(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-'
     '${d.day.toString().padLeft(2, '0')}';
 
+/// Regra de repetição de um evento.
+class Recurrence {
+  const Recurrence({
+    required this.unit,
+    this.interval = 1,
+    this.weekdays = const {},
+    this.until,
+    this.count,
+  });
+
+  /// 'day', 'week', 'month' ou 'year'.
+  final String unit;
+
+  /// Repete a cada [interval] unidades.
+  final int interval;
+
+  /// Só na repetição semanal: dias da semana (1 = segunda … 7 = domingo).
+  /// Vazio = o dia da semana em que o evento começa.
+  final Set<int> weekdays;
+
+  /// Último dia (inclusive) em que pode haver uma ocorrência.
+  final DateTime? until;
+
+  /// Número total de ocorrências.
+  final int? count;
+
+  static DateTime _monday(DateTime d) =>
+      DateTime(d.year, d.month, d.day - (d.weekday - 1));
+
+  /// Há uma ocorrência a começar em [d], numa série iniciada em [first]?
+  bool matches(DateTime first, DateTime d) {
+    if (d.isBefore(first)) return false;
+    if (until != null && d.isAfter(until!)) return false;
+    final int index;
+    switch (unit) {
+      case 'day':
+        final n = daysBetween(first, d);
+        if (n % interval != 0) return false;
+        index = n ~/ interval;
+      case 'week':
+        final days = (weekdays.isEmpty ? {first.weekday} : weekdays).toList()
+          ..sort();
+        if (!days.contains(d.weekday)) return false;
+        final w = daysBetween(_monday(first), _monday(d)) ~/ 7;
+        if (w % interval != 0) return false;
+        // Dias da primeira semana anteriores ao início não contam.
+        final skipped = days.where((x) => x < first.weekday).length;
+        index =
+            (w ~/ interval) * days.length + days.indexOf(d.weekday) - skipped;
+      case 'month':
+        if (d.day != first.day) return false;
+        final m = (d.year - first.year) * 12 + d.month - first.month;
+        if (m % interval != 0) return false;
+        index = m ~/ interval;
+      case 'year':
+        if (d.month != first.month || d.day != first.day) return false;
+        final y = d.year - first.year;
+        if (y % interval != 0) return false;
+        index = y ~/ interval;
+      default:
+        return false;
+    }
+    return count == null || index < count!;
+  }
+
+  /// A mesma regra com tudo deslocado [days] dias.
+  Recurrence shifted(int days) => Recurrence(
+    unit: unit,
+    interval: interval,
+    weekdays: {for (final w in weekdays) (w - 1 + days) % 7 + 1},
+    until: until == null
+        ? null
+        : DateTime(until!.year, until!.month, until!.day + days),
+    count: count,
+  );
+
+  factory Recurrence.fromJson(Map<String, dynamic> j) => Recurrence(
+    unit: j['unit'] as String,
+    interval: ((j['interval'] as num?)?.toInt() ?? 1).clamp(1, 999),
+    weekdays: {
+      for (final w in (j['weekdays'] as List? ?? [])) (w as num).toInt(),
+    },
+    until: j['until'] == null
+        ? null
+        : dateOnly(DateTime.parse(j['until'] as String)),
+    count: (j['count'] as num?)?.toInt(),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'unit': unit,
+    'interval': interval,
+    if (weekdays.isNotEmpty) 'weekdays': weekdays.toList()..sort(),
+    if (until != null) 'until': _ymd(until!),
+    if (count != null) 'count': count,
+  };
+}
+
 /// Base comum dos registos sincronizados.
 abstract class Record {
   Record({
@@ -63,6 +160,7 @@ class Event extends Record {
     required this.end,
     this.allDay = false,
     this.color = 0,
+    this.recurrence,
     required super.updatedAt,
     super.deletedAt,
     super.dirty,
@@ -81,16 +179,35 @@ class Event extends Record {
   /// Índice em `eventColors`.
   int color;
 
-  /// O evento toca no dia indicado?
-  bool occursOn(DateTime day) {
-    final d = dateOnly(day);
-    final first = dateOnly(start);
+  /// Repetição; `null` = evento único. [start] e [end] descrevem a primeira
+  /// ocorrência.
+  Recurrence? recurrence;
+
+  /// Dias de calendário que cada ocorrência ocupa para além do primeiro.
+  int get _extraDays {
     var last = dateOnly(end);
     // Um evento que acaba exatamente à meia-noite não ocupa o dia seguinte.
     if (!allDay && end == last && end.isAfter(start)) {
       last = last.subtract(const Duration(days: 1));
     }
-    return !d.isBefore(first) && !d.isAfter(last);
+    final n = daysBetween(start, last);
+    return n < 0 ? 0 : n;
+  }
+
+  /// Há uma ocorrência a começar no dia indicado?
+  bool startsOn(DateTime day) {
+    final d = dateOnly(day);
+    final first = dateOnly(start);
+    return recurrence == null ? d == first : recurrence!.matches(first, d);
+  }
+
+  /// O evento (ou uma das suas ocorrências) toca no dia indicado?
+  bool occursOn(DateTime day) {
+    final d = dateOnly(day);
+    for (var k = 0; k <= _extraDays; k++) {
+      if (startsOn(DateTime(d.year, d.month, d.day - k))) return true;
+    }
+    return false;
   }
 
   // Eventos de dia inteiro são gravados como meia-noite UTC da data, para
@@ -116,6 +233,11 @@ class Event extends Record {
       end: _decode(j['end_at'] as String, allDay),
       allDay: allDay,
       color: (j['color'] as num?)?.toInt() ?? 0,
+      recurrence: j['recurrence'] == null
+          ? null
+          : Recurrence.fromJson(
+              Map<String, dynamic>.from(j['recurrence'] as Map),
+            ),
       updatedAt: DateTime.parse(j['updated_at'] as String).toUtc(),
       deletedAt: j['deleted_at'] == null
           ? null
@@ -133,6 +255,7 @@ class Event extends Record {
     'end_at': _encode(end, allDay),
     'all_day': allDay,
     'color': color,
+    'recurrence': recurrence?.toJson(),
     'updated_at': updatedAt.toIso8601String(),
     'deleted_at': deletedAt?.toIso8601String(),
   };

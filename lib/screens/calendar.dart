@@ -105,7 +105,11 @@ class _CalendarPageState extends State<CalendarPage> {
       builder: (context) => AlertDialog(
         title: Text('"${drag.event.title}"'),
         content: Text(
-          'Mover ou copiar para ${fmtDayLong(target)}?',
+          drag.event.recurrence == null
+              ? 'Mover ou copiar para ${fmtDayLong(target)}?'
+              : 'Este evento repete-se. "Mover" desloca todas as '
+                    'ocorrências; "Copiar" cria um evento único em '
+                    '${fmtDayLong(target)}.',
           style: const TextStyle(fontSize: 17),
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -129,7 +133,7 @@ class _CalendarPageState extends State<CalendarPage> {
       ),
     );
     if (copy == null) return;
-    widget.store.shiftEvent(drag.event, days, copy: copy);
+    widget.store.shiftEvent(drag.event, days, copy: copy, from: drag.day);
   }
 
   Widget _header(BuildContext context) {
@@ -368,8 +372,12 @@ class _CalendarPageState extends State<CalendarPage> {
                     day: day,
                     compact: compact,
                     faded: outside,
-                    onTap: () =>
-                        openEventEditor(context, widget.store, event: e),
+                    onTap: () => openEventEditor(
+                      context,
+                      widget.store,
+                      event: e,
+                      day: day,
+                    ),
                   ),
                 if (hidden > 0 && room > 0)
                   SizedBox(
@@ -660,6 +668,11 @@ class _EventTile extends StatelessWidget {
   String get _when {
     final e = event;
     final multiDay = dateOnly(e.start) != dateOnly(e.end);
+    if (e.recurrence != null && !multiDay) {
+      return e.allDay
+          ? 'Dia inteiro · repete'
+          : '${fmtTime(e.start)} – ${fmtTime(e.end)} · repete';
+    }
     if (e.allDay) {
       return multiDay
           ? 'Dia inteiro · ${fmtDateShort(e.start)} – ${fmtDateShort(e.end)}'

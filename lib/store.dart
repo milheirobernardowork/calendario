@@ -60,13 +60,31 @@ class Store extends ChangeNotifier {
       _events.values.where((e) => !e.isDeleted).toList()
         ..sort((a, b) => a.start.compareTo(b.start));
 
-  List<Event> eventsOn(DateTime day) {
+  /// Eventos por dia já calculados; esvaziado sempre que os dados mudam.
+  /// Evita percorrer todos os eventos várias vezes por cada dia desenhado.
+  final _dayCache = <DateTime, List<Event>>{};
+
+  @override
+  void notifyListeners() {
+    _dayCache.clear();
+    super.notifyListeners();
+  }
+
+  /// Eventos que tocam no dia, ordenados. A lista devolvida não deve ser
+  /// alterada por quem a recebe.
+  List<Event> eventsOn(DateTime day) =>
+      _dayCache[dateOnly(day)] ??= _computeEventsOn(day);
+
+  List<Event> _computeEventsOn(DateTime day) {
     final list = _events.values
         .where((e) => !e.isDeleted && e.occursOn(day))
         .toList();
     list.sort((a, b) {
       if (a.allDay != b.allDay) return a.allDay ? -1 : 1;
-      return a.start.compareTo(b.start);
+      // Pela hora do dia: numa série, a data de início é a da 1.ª ocorrência.
+      final ta = a.start.hour * 60 + a.start.minute;
+      final tb = b.start.hour * 60 + b.start.minute;
+      return ta != tb ? ta - tb : a.title.compareTo(b.title);
     });
     return list;
   }
@@ -82,10 +100,15 @@ class Store extends ChangeNotifier {
   void deleteTask(Task t) => _put(_tasks, t, delete: true);
 
   /// Desloca um evento [days] dias; com [copy] cria um duplicado e mantém
-  /// o original.
-  void shiftEvent(Event e, int days, {bool copy = false}) {
+  /// o original. [from] é o dia de onde foi agarrado: numa série repetida,
+  /// a cópia parte dessa ocorrência e não da primeira.
+  void shiftEvent(Event e, int days, {bool copy = false, DateTime? from}) {
+    var offset = days;
+    if (copy && e.recurrence != null && from != null) {
+      offset += daysBetween(e.start, from);
+    }
     DateTime shift(DateTime t) =>
-        DateTime(t.year, t.month, t.day + days, t.hour, t.minute);
+        DateTime(t.year, t.month, t.day + offset, t.hour, t.minute);
     saveEvent(
       Event(
         id: copy ? newId() : e.id,
@@ -95,6 +118,8 @@ class Store extends ChangeNotifier {
         end: shift(e.end),
         allDay: e.allDay,
         color: e.color,
+        // Mover desloca a série inteira; a cópia é um evento único.
+        recurrence: copy ? null : e.recurrence?.shifted(days),
         updatedAt: e.updatedAt,
       ),
     );

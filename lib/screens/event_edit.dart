@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models.dart';
 import '../store.dart';
@@ -39,6 +40,19 @@ class _EventEditScreenState extends State<EventEditScreen> {
   late bool _allDay;
   late int _color;
 
+  // Repetição.
+  bool _repeat = false;
+  String _unit = 'week';
+  Set<int> _weekdays = {};
+  String _endMode = 'never'; // never | date | count
+  DateTime? _until;
+  final _interval = TextEditingController(text: '1');
+  final _count = TextEditingController(text: '10');
+
+  /// Dia cuja semana aparece no painel: o dia em que se tocou no calendário,
+  /// até a data de início ser alterada.
+  DateTime? _anchor;
+
   @override
   void initState() {
     super.initState();
@@ -52,6 +66,21 @@ class _EventEditScreenState extends State<EventEditScreen> {
       _end = e.end;
       _allDay = e.allDay;
       _color = e.color;
+      _anchor = widget.day;
+      final r = e.recurrence;
+      if (r != null) {
+        _repeat = true;
+        _unit = r.unit;
+        _interval.text = '${r.interval}';
+        _weekdays = {...r.weekdays};
+        _until = r.until;
+        if (r.count != null) _count.text = '${r.count}';
+        _endMode = r.count != null
+            ? 'count'
+            : r.until != null
+            ? 'date'
+            : 'never';
+      }
     } else {
       final now = DateTime.now();
       final day = widget.day ?? dateOnly(now);
@@ -72,6 +101,8 @@ class _EventEditScreenState extends State<EventEditScreen> {
   void dispose() {
     _title.dispose();
     _notes.dispose();
+    _interval.dispose();
+    _count.dispose();
     super.dispose();
   }
 
@@ -83,6 +114,7 @@ class _EventEditScreenState extends State<EventEditScreen> {
     // Mantém a duração ao mover o início.
     final length = _end.difference(_start);
     setState(() {
+      _anchor = null;
       _start = v;
       _end = v.add(length.isNegative ? Duration.zero : length);
     });
@@ -122,6 +154,162 @@ class _EventEditScreenState extends State<EventEditScreen> {
   /// semana o distinguir dos existentes).
   late final String _id = widget.event?.id ?? newId();
 
+  Recurrence? get _recurrence {
+    if (!_repeat) return null;
+    final weekly = _unit == 'week';
+    return Recurrence(
+      unit: _unit,
+      interval: (int.tryParse(_interval.text) ?? 1).clamp(1, 999),
+      // Sem dias escolhidos, repete no dia da semana do início.
+      weekdays: weekly ? {..._weekdays} : const {},
+      until: _endMode == 'date' ? (_until ?? dateOnly(_start)) : null,
+      count: _endMode == 'count'
+          ? (int.tryParse(_count.text) ?? 1).clamp(1, 9999)
+          : null,
+    );
+  }
+
+  Future<void> _pickUntil() async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _until ?? _start,
+      firstDate: dateOnly(_start),
+      lastDate: DateTime(2100, 12, 31),
+    );
+    if (d != null) setState(() => _until = dateOnly(d));
+  }
+
+  Widget _numberField(TextEditingController c) => SizedBox(
+    width: 76,
+    child: TextField(
+      controller: c,
+      textAlign: TextAlign.center,
+      keyboardType: TextInputType.number,
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(3),
+      ],
+      style: const TextStyle(fontSize: 17),
+      decoration: const InputDecoration(
+        border: OutlineInputBorder(),
+        isDense: true,
+        contentPadding: EdgeInsets.symmetric(vertical: 14),
+      ),
+      onChanged: (_) => setState(() {}),
+    ),
+  );
+
+  Widget _choice(
+    String value,
+    Map<String, String> options,
+    ValueChanged<String> onChanged,
+  ) => DropdownButton<String>(
+    value: value,
+    style: Theme.of(context).textTheme.bodyLarge!.copyWith(fontSize: 17),
+    items: [
+      for (final o in options.entries)
+        DropdownMenuItem(value: o.key, child: Text(o.value)),
+    ],
+    onChanged: (v) => v == null ? null : onChanged(v),
+  );
+
+  Widget _repeatLabel(String text) => SizedBox(
+    width: 76,
+    child: Text(text, style: const TextStyle(fontSize: 16)),
+  );
+
+  List<Widget> _repeatSection(BuildContext context) {
+    const dayNames = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
+    // Sem escolha explícita, fica marcado o dia da semana do início.
+    final days = _weekdays.isEmpty ? {_start.weekday} : _weekdays;
+    return [
+      SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Repetir', style: TextStyle(fontSize: 17)),
+        value: _repeat,
+        onChanged: (v) => setState(() => _repeat = v),
+      ),
+      if (_repeat) ...[
+        Row(
+          children: [
+            _repeatLabel('a cada'),
+            _numberField(_interval),
+            const SizedBox(width: 12),
+            _choice(_unit, const {
+              'day': 'dias',
+              'week': 'semanas',
+              'month': 'meses',
+              'year': 'anos',
+            }, (v) => setState(() => _unit = v)),
+          ],
+        ),
+        if (_unit == 'week') ...[
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: _repeatLabel('em'),
+              ),
+              Expanded(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (var d = 1; d <= 7; d++)
+                      FilterChip(
+                        label: Text(
+                          dayNames[d - 1],
+                          style: const TextStyle(fontSize: 15),
+                        ),
+                        showCheckmark: false,
+                        selected: days.contains(d),
+                        onSelected: (on) => setState(() {
+                          final next = {...days};
+                          on ? next.add(d) : next.remove(d);
+                          // Tem de ficar pelo menos um dia.
+                          if (next.isNotEmpty) _weekdays = next;
+                        }),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            _repeatLabel('termina'),
+            _choice(_endMode, const {
+              'never': 'nunca',
+              'date': 'numa data',
+              'count': 'após',
+            }, (v) => setState(() => _endMode = v)),
+            const SizedBox(width: 12),
+            if (_endMode == 'date')
+              Flexible(
+                child: FilledButton.tonal(
+                  style: bigButton,
+                  onPressed: _pickUntil,
+                  child: Text(
+                    fmtDate(_until ?? dateOnly(_start)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            if (_endMode == 'count') ...[
+              _numberField(_count),
+              const SizedBox(width: 8),
+              const Text('vezes', style: TextStyle(fontSize: 16)),
+            ],
+          ],
+        ),
+      ],
+    ];
+  }
+
   /// O evento tal como está no formulário.
   Event get _draft {
     final title = _title.text.trim();
@@ -133,6 +321,7 @@ class _EventEditScreenState extends State<EventEditScreen> {
       end: _allDay ? dateOnly(_end) : _end,
       allDay: _allDay,
       color: _color,
+      recurrence: _recurrence,
       updatedAt: DateTime.now().toUtc(),
     );
   }
@@ -218,6 +407,8 @@ class _EventEditScreenState extends State<EventEditScreen> {
                 style: TextStyle(color: scheme.error, fontSize: 15),
               ),
             ),
+          const SizedBox(height: 8),
+          ..._repeatSection(context),
           const SizedBox(height: 20),
           Wrap(
             spacing: 12,
@@ -302,8 +493,13 @@ class _EventEditScreenState extends State<EventEditScreen> {
     final divider = Theme.of(context).colorScheme.outlineVariant;
     final week = ListenableBuilder(
       listenable: widget.store,
-      builder: (context, _) =>
-          WeekPanel(store: widget.store, draft: _draft, onDayTap: _moveToDay),
+      builder: (context, _) => WeekPanel(
+        store: widget.store,
+        draft: _draft,
+        anchor: _anchor,
+        // Numa série, tocar num dia não muda a data de início.
+        onDayTap: _repeat ? null : _moveToDay,
+      ),
     );
     // Com o teclado aberto (telemóvel) não sobra espaço para a semana.
     final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
