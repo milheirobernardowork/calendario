@@ -12,6 +12,43 @@ String newId() {
       '${h.substring(16, 20)}-${h.substring(20)}';
 }
 
+const _accents = {
+  'á': 'a',
+  'à': 'a',
+  'â': 'a',
+  'ã': 'a',
+  'ä': 'a',
+  'é': 'e',
+  'è': 'e',
+  'ê': 'e',
+  'ë': 'e',
+  'í': 'i',
+  'ì': 'i',
+  'î': 'i',
+  'ï': 'i',
+  'ó': 'o',
+  'ò': 'o',
+  'ô': 'o',
+  'õ': 'o',
+  'ö': 'o',
+  'ú': 'u',
+  'ù': 'u',
+  'û': 'u',
+  'ü': 'u',
+  'ç': 'c',
+  'ñ': 'n',
+};
+
+/// Texto para comparar: minúsculas, sem acentos, espaços simples.
+String normalizeText(String s) {
+  final lower = s.toLowerCase().trim();
+  final b = StringBuffer();
+  for (final ch in lower.split('')) {
+    b.write(_accents[ch] ?? ch);
+  }
+  return b.toString().replaceAll(RegExp(r'\s+'), ' ');
+}
+
 DateTime dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
 /// Dias de calendário entre duas datas (ignora horas e mudanças de hora).

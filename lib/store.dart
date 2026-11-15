@@ -84,6 +84,46 @@ class Store extends ChangeNotifier {
   // ---------------------------------------------------------------- leitura
 
   List<Event>? _eventsCache;
+  List<Event>? _titlesCache;
+
+  /// Um evento por título (o mais recente de cada), do mais recente para o
+  /// mais antigo. Serve as sugestões ao escrever o nome de um evento.
+  List<Event> get recentTitles {
+    final cached = _titlesCache;
+    if (cached != null) return cached;
+    final now = DateTime.now();
+    final byTitle = <String, Event>{};
+    for (final e in _events.values) {
+      if (e.isDeleted || e.title.trim().isEmpty) continue;
+      // Eventos muito no futuro não contam como "recentes".
+      if (e.start.isAfter(now.add(const Duration(days: 60)))) continue;
+      final key = normalizeText(e.title);
+      final other = byTitle[key];
+      if (other == null || e.start.isAfter(other.start)) byTitle[key] = e;
+    }
+    return _titlesCache = byTitle.values.toList()
+      ..sort((a, b) => b.start.compareTo(a.start));
+  }
+
+  /// Títulos recentes que correspondem ao que se escreveu: primeiro os que
+  /// começam assim, depois os que contêm o texto.
+  List<Event> suggestTitles(String typed, {int max = 6}) {
+    final q = normalizeText(typed);
+    if (q.isEmpty) return const [];
+    final starts = <Event>[];
+    final contains = <Event>[];
+    for (final e in recentTitles) {
+      final t = normalizeText(e.title);
+      if (t == q) continue; // já está escrito
+      if (t.startsWith(q)) {
+        starts.add(e);
+      } else if (t.contains(q)) {
+        contains.add(e);
+      }
+      if (starts.length >= max) break;
+    }
+    return [...starts, ...contains].take(max).toList();
+  }
 
   /// Todos os eventos, por data. Não alterar a lista devolvida.
   List<Event> get events =>
@@ -98,6 +138,7 @@ class Store extends ChangeNotifier {
   void notifyListeners() {
     _dayCache.clear();
     _eventsCache = null;
+    _titlesCache = null;
     _singleIndex = null;
     _recurring = null;
     super.notifyListeners();

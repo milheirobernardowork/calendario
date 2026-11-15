@@ -70,6 +70,7 @@ void main() {
   recurrenceTests();
   taskFlagTests();
   syncEfficiencyTests();
+  suggestionTests();
   test('alterações propagam-se entre dispositivos', () async {
     final server = FakeRemote();
     final pc = await device(server);
@@ -396,5 +397,29 @@ void syncEfficiencyTests() {
     // Uma sincronização = 3 tabelas.
     expect(server.partialFetches + server.fullFetches - before, 3);
     expect(server.tables['tasks'], hasLength(5));
+  });
+}
+
+void suggestionTests() {
+  test('sugestões de títulos: recentes, sem acentos, sem repetidos', () async {
+    final s = await device(null);
+    Event ev(String title, DateTime start) => Event(
+      id: newId(),
+      title: title,
+      start: start,
+      end: start.add(const Duration(hours: 1)),
+      updatedAt: DateTime.now().toUtc(),
+    );
+    final now = DateTime.now();
+    s.saveEvent(ev('Ginásio 💪', now.subtract(const Duration(days: 3))));
+    s.saveEvent(ev('Ginásio 💪', now.subtract(const Duration(days: 1))));
+    s.saveEvent(ev('Jantar Nena', now.subtract(const Duration(days: 2))));
+    s.saveEvent(ev('Reunião Ginásio', now.subtract(const Duration(days: 5))));
+    s.saveEvent(ev('Gin muito no futuro', now.add(const Duration(days: 400))));
+    final r = s.suggestTitles('gina');
+    expect(r.map((e) => e.title), ['Ginásio 💪', 'Reunião Ginásio']);
+    expect(r.first.start.day, now.subtract(const Duration(days: 1)).day);
+    expect(s.suggestTitles(''), isEmpty);
+    expect(s.suggestTitles('jan').single.title, 'Jantar Nena');
   });
 }

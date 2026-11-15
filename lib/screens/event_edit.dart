@@ -50,6 +50,7 @@ class EventEditScreen extends StatefulWidget {
 
 class _EventEditScreenState extends State<EventEditScreen> {
   late final TextEditingController _title;
+  final _titleFocus = FocusNode();
   late final TextEditingController _notes;
   late DateTime _start;
   late DateTime _end;
@@ -139,6 +140,7 @@ class _EventEditScreenState extends State<EventEditScreen> {
   @override
   void dispose() {
     _title.dispose();
+    _titleFocus.dispose();
     _notes.dispose();
     _interval.dispose();
     _count.dispose();
@@ -437,17 +439,7 @@ class _EventEditScreenState extends State<EventEditScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          TextField(
-            controller: _title,
-            autofocus: widget.event == null,
-            textCapitalization: TextCapitalization.sentences,
-            style: Theme.of(context).textTheme.headlineSmall,
-            decoration: const InputDecoration(
-              hintText: 'Título',
-              contentPadding: EdgeInsets.symmetric(vertical: 14),
-            ),
-            onSubmitted: (_) => _save(),
-          ),
+          _titleField(context),
           const SizedBox(height: 12),
           if (_occurrence != null) ...[
             SegmentedButton<bool>(
@@ -570,6 +562,80 @@ class _EventEditScreenState extends State<EventEditScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Título com sugestões dos nomes de eventos recentes.
+  Widget _titleField(BuildContext context) {
+    final theme = Theme.of(context);
+    return RawAutocomplete<Event>(
+      textEditingController: _title,
+      focusNode: _titleFocus,
+      optionsBuilder: (value) => widget.store.suggestTitles(value.text),
+      displayStringForOption: (e) => e.title,
+      onSelected: (e) => setState(() {
+        // Num evento novo, vem também a cor e a coluna desse evento.
+        if (widget.event == null) {
+          _color = e.color;
+          _category = widget.category ?? e.category;
+        }
+      }),
+      fieldViewBuilder: (context, controller, focus, onSubmit) => TextField(
+        controller: controller,
+        focusNode: focus,
+        autofocus: widget.event == null,
+        textCapitalization: TextCapitalization.sentences,
+        style: theme.textTheme.headlineSmall,
+        decoration: const InputDecoration(
+          hintText: 'Título',
+          contentPadding: EdgeInsets.symmetric(vertical: 14),
+        ),
+        // Enter escolhe a sugestão realçada, se houver; senão guarda.
+        onSubmitted: (_) => widget.store.suggestTitles(controller.text).isEmpty
+            ? _save()
+            : onSubmit(),
+      ),
+      optionsViewBuilder: (context, onSelected, options) {
+        final highlighted = AutocompleteHighlightedOption.of(context);
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 6,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560, maxHeight: 340),
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                shrinkWrap: true,
+                children: [
+                  for (final (i, e) in options.indexed)
+                    ListTile(
+                      selected: i == highlighted,
+                      leading: Container(
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: eventColor(e.color),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      title: Text(
+                        e.title,
+                        style: const TextStyle(fontSize: 17),
+                      ),
+                      subtitle: Text(
+                        '${e.start.isAfter(DateTime.now()) ? 'Próximo' : 'Último'}: '
+                        '${fmtDate(e.start)}',
+                      ),
+                      onTap: () => onSelected(e),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
