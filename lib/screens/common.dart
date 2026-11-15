@@ -16,6 +16,8 @@ const eventColors = <Color>[
   // Acrescentar sempre no fim: o índice é o que fica gravado no evento.
   Color(0xFF6EC6F5), // azul claro
   Color(0xFFEDBE9C), // cor de pele
+  Color(0xFF0B8043), // verde escuro
+  Color(0xFF7986CB), // lilás
 ];
 
 const eventColorNames = [
@@ -27,6 +29,8 @@ const eventColorNames = [
   'Cinzento',
   'Azul claro',
   'Cor de pele',
+  'Verde escuro',
+  'Lilás',
 ];
 
 Color eventColor(int i) => eventColors[i.clamp(0, eventColors.length - 1)];
