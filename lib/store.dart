@@ -81,6 +81,25 @@ class Store extends ChangeNotifier {
   void deleteEvent(Event e) => _put(_events, e, delete: true);
   void deleteTask(Task t) => _put(_tasks, t, delete: true);
 
+  /// Desloca um evento [days] dias; com [copy] cria um duplicado e mantém
+  /// o original.
+  void shiftEvent(Event e, int days, {bool copy = false}) {
+    DateTime shift(DateTime t) =>
+        DateTime(t.year, t.month, t.day + days, t.hour, t.minute);
+    saveEvent(
+      Event(
+        id: copy ? newId() : e.id,
+        title: e.title,
+        notes: e.notes,
+        start: shift(e.start),
+        end: shift(e.end),
+        allDay: e.allDay,
+        color: e.color,
+        updatedAt: e.updatedAt,
+      ),
+    );
+  }
+
   void toggleTask(Task t) {
     t.done = !t.done;
     saveTask(t);

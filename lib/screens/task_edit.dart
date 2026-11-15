@@ -5,20 +5,28 @@ import '../models.dart';
 import '../store.dart';
 import 'common.dart';
 
-Future<void> openTaskEditor(BuildContext context, Store store, {Task? task}) {
+Future<void> openTaskEditor(
+  BuildContext context,
+  Store store, {
+  Task? task,
+  DateTime? due,
+}) {
   return Navigator.of(context).push(
     MaterialPageRoute(
       fullscreenDialog: true,
-      builder: (_) => TaskEditScreen(store: store, task: task),
+      builder: (_) => TaskEditScreen(store: store, task: task, due: due),
     ),
   );
 }
 
 class TaskEditScreen extends StatefulWidget {
-  const TaskEditScreen({super.key, required this.store, this.task});
+  const TaskEditScreen({super.key, required this.store, this.task, this.due});
 
   final Store store;
   final Task? task;
+
+  /// Data limite inicial de uma tarefa nova.
+  final DateTime? due;
 
   @override
   State<TaskEditScreen> createState() => _TaskEditScreenState();
@@ -27,7 +35,7 @@ class TaskEditScreen extends StatefulWidget {
 class _TaskEditScreenState extends State<TaskEditScreen> {
   late final _title = TextEditingController(text: widget.task?.title ?? '');
   late final _notes = TextEditingController(text: widget.task?.notes ?? '');
-  late DateTime? _due = widget.task?.due;
+  late DateTime? _due = widget.task?.due ?? widget.due;
   late int _priority = widget.task?.priority ?? 0;
   late bool _done = widget.task?.done ?? false;
 

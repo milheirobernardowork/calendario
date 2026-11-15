@@ -39,6 +39,10 @@ String fmtTime(DateTime d) => DateFormat.Hm(locale).format(d);
 String fmtDate(DateTime d) =>
     _cap(DateFormat('EEE, d MMM y', locale).format(d));
 String fmtDateShort(DateTime d) => DateFormat('d MMM', locale).format(d);
+String fmtMonth(DateTime d) =>
+    _cap(DateFormat("MMMM 'de' y", locale).format(d));
+String fmtWeekday(DateTime d) =>
+    DateFormat.E(locale).format(d).substring(0, 3).toLowerCase();
 String fmtDayLong(DateTime d) =>
     _cap(DateFormat("EEEE, d 'de' MMMM", locale).format(d));
 

@@ -1,6 +1,5 @@
 # Compila a app para Windows e Android. Os executáveis ficam em "Artifacts"
-# na página da execução. Requer dois "secrets" no repositório:
-# SUPABASE_URL e SUPABASE_ANON_KEY.
+# na página da execução.
 name: build
 on:
   workflow_dispatch:
@@ -15,7 +14,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - run: flutter build windows --release --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+      - run: flutter build windows --release
       - uses: actions/upload-artifact@v4
         with:
           name: agenda-windows
@@ -32,7 +31,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - run: flutter build apk --release --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+      - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
           name: agenda-android

@@ -5,12 +5,15 @@
 /// protegidos pelas regras RLS definidas em `supabase/schema.sql`.
 ///
 /// Se ficarem vazios, a app funciona só em modo local (sem sincronização).
-/// Também podem ser passados na compilação:
+/// Podem ser substituídos na compilação:
 ///   flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
-const supabaseUrl = String.fromEnvironment('SUPABASE_URL', defaultValue: '');
+const supabaseUrl = String.fromEnvironment(
+  'SUPABASE_URL',
+  defaultValue: 'https://qotpnflhfscqtrxphqlr.supabase.co',
+);
 const supabaseAnonKey = String.fromEnvironment(
   'SUPABASE_ANON_KEY',
-  defaultValue: '',
+  defaultValue: 'sb_publishable_9jesXMTXnJVqtXq2oc4pCQ_Kafe9E0T',
 );
 
 bool get supabaseConfigured =>

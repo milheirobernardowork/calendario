@@ -53,6 +53,7 @@ Task task(String title) =>
     Task(id: newId(), title: title, updatedAt: DateTime.now().toUtc());
 
 void main() {
+  dragTests();
   test('alterações propagam-se entre dispositivos', () async {
     final server = FakeRemote();
     final pc = await device(server);
@@ -154,5 +155,41 @@ void main() {
     final b = Store(prefs);
     expect(b.tasks.single.title, 'Persistente');
     expect(b.pendingChanges, 1);
+  });
+}
+
+// Arrastar um evento no calendário: mover ou copiar.
+void dragTests() {
+  Event sample() => Event(
+    id: newId(),
+    title: 'Reunião',
+    start: DateTime(2026, 11, 30, 10),
+    end: DateTime(2026, 11, 30, 11, 30),
+    color: 2,
+    updatedAt: DateTime.now().toUtc(),
+  );
+
+  test('mover evento muda o dia e mantém a hora', () async {
+    final s = await device(null);
+    final e = sample();
+    s.saveEvent(e);
+    s.shiftEvent(e, 2);
+    expect(s.events.single.id, e.id);
+    expect(s.events.single.start, DateTime(2026, 12, 2, 10));
+    expect(s.events.single.end, DateTime(2026, 12, 2, 11, 30));
+    expect(s.eventsOn(DateTime(2026, 11, 30)), isEmpty);
+  });
+
+  test('copiar evento mantém o original', () async {
+    final s = await device(null);
+    final e = sample();
+    s.saveEvent(e);
+    s.shiftEvent(e, -3, copy: true);
+    expect(s.events, hasLength(2));
+    expect(s.eventsOn(DateTime(2026, 11, 30)).single.id, e.id);
+    final copy = s.eventsOn(DateTime(2026, 11, 27)).single;
+    expect(copy.id, isNot(e.id));
+    expect(copy.title, 'Reunião');
+    expect(copy.color, 2);
   });
 }

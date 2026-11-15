@@ -5,6 +5,7 @@ import '../models.dart';
 import '../store.dart';
 import 'common.dart';
 import 'task_edit.dart';
+import 'task_timeline.dart';
 
 class TasksPage extends StatefulWidget {
   const TasksPage({super.key, required this.store});
@@ -19,6 +20,7 @@ class _TasksPageState extends State<TasksPage> {
   final _quick = TextEditingController();
   final _quickFocus = FocusNode();
   bool _showDone = false;
+  bool _timeline = false;
 
   @override
   void dispose() {
@@ -47,6 +49,36 @@ class _TasksPageState extends State<TasksPage> {
 
   @override
   Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 4),
+          child: SegmentedButton<bool>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: false,
+                icon: Icon(Icons.checklist),
+                label: Text('Lista'),
+              ),
+              ButtonSegment(
+                value: true,
+                icon: Icon(Icons.timeline),
+                label: Text('Timeline'),
+              ),
+            ],
+            selected: {_timeline},
+            onSelectionChanged: (s) => setState(() => _timeline = s.first),
+          ),
+        ),
+        Expanded(
+          child: _timeline ? TaskTimeline(store: widget.store) : _list(context),
+        ),
+      ],
+    );
+  }
+
+  Widget _list(BuildContext context) {
     return ListenableBuilder(
       listenable: widget.store,
       builder: (context, _) {

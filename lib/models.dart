@@ -14,6 +14,13 @@ String newId() {
 
 DateTime dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
+/// Dias de calendário entre duas datas (ignora horas e mudanças de hora).
+int daysBetween(DateTime from, DateTime to) => DateTime.utc(
+  to.year,
+  to.month,
+  to.day,
+).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+
 String _ymd(DateTime d) =>
     '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-'
     '${d.day.toString().padLeft(2, '0')}';
