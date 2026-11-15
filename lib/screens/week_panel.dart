@@ -16,6 +16,7 @@ class WeekPanel extends StatelessWidget {
     required this.draft,
     required this.onDayTap,
     this.anchor,
+    this.hide,
   });
 
   final Store store;
@@ -26,6 +27,9 @@ class WeekPanel extends StatelessWidget {
 
   /// Dia cuja semana é mostrada; por omissão, o início do evento.
   final DateTime? anchor;
+
+  /// Eventos a não mostrar num dia (ex.: a ocorrência a ser editada).
+  final bool Function(Event e, DateTime day)? hide;
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +43,7 @@ class WeekPanel extends StatelessWidget {
     List<Event> eventsOn(DateTime day) {
       final list = [
         for (final e in store.eventsOn(day))
-          if (e.id != draft.id) e,
+          if (e.id != draft.id && !(hide?.call(e, day) ?? false)) e,
         if (draft.occursOn(day)) draft,
       ];
       list.sort((a, b) {

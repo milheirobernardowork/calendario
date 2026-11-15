@@ -127,9 +127,9 @@ class _CalendarPageState extends State<CalendarPage> {
         content: Text(
           drag.event.recurrence == null
               ? 'Mover ou copiar para ${fmtDayLong(target)}?'
-              : 'Este evento repete-se. "Mover" desloca todas as '
-                    'ocorrências; "Copiar" cria um evento único em '
-                    '${fmtDayLong(target)}.',
+              : 'Este evento repete-se. Só a ocorrência de '
+                    '${fmtDateShort(drag.day)} é movida ou copiada para '
+                    '${fmtDayLong(target)}; o resto da série fica igual.',
           style: const TextStyle(fontSize: 17),
         ),
         actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -558,6 +558,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 for (final e in widget.store.eventsOn(day))
                   _EventTile(
                     event: e,
+                    day: day,
                     store: widget.store,
                     onOpen: () => Navigator.pop(dialog),
                   ),
@@ -592,14 +593,6 @@ class _CalendarPageState extends State<CalendarPage> {
     ),
   );
 
-  Widget _empty(BuildContext context, String text) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
-    child: Text(
-      text,
-      style: TextStyle(color: Theme.of(context).colorScheme.outline),
-    ),
-  );
-
   /// Tarefas marcadas como ativas e tarefas com data no dia selecionado.
   List<Widget> _dayTasks(BuildContext context) {
     final day = widget.selectedDay;
@@ -619,11 +612,32 @@ class _CalendarPageState extends State<CalendarPage> {
         TaskTile(task: t, store: widget.store, today: today, compact: true);
     return [
       _section(context, 'Tarefas ativas'),
-      if (active.isEmpty) _empty(context, 'Nenhuma tarefa ativa'),
       ...active.map(tile),
+      QuickAddTask(
+        hint: 'Nova tarefa ativa…',
+        onAdd: (title) => widget.store.saveTask(
+          Task(
+            id: newId(),
+            title: title,
+            active: true,
+            due: today,
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        ),
+      ),
       _section(context, 'Tarefas deste dia'),
-      if (forDay.isEmpty) _empty(context, 'Nenhuma tarefa para este dia'),
       ...forDay.map(tile),
+      QuickAddTask(
+        hint: 'Nova tarefa para ${fmtDateShort(day)}…',
+        onAdd: (title) => widget.store.saveTask(
+          Task(
+            id: newId(),
+            title: title,
+            due: day,
+            updatedAt: DateTime.now().toUtc(),
+          ),
+        ),
+      ),
     ];
   }
 
@@ -649,7 +663,10 @@ class _CalendarPageState extends State<CalendarPage> {
         ),
       ];
     }
-    return [for (final e in events) _EventTile(event: e, store: widget.store)];
+    return [
+      for (final e in events)
+        _EventTile(event: e, day: widget.selectedDay, store: widget.store),
+    ];
   }
 
   @override
@@ -779,9 +796,17 @@ class _EventChip extends StatelessWidget {
 }
 
 class _EventTile extends StatelessWidget {
-  const _EventTile({required this.event, required this.store, this.onOpen});
+  const _EventTile({
+    required this.event,
+    required this.day,
+    required this.store,
+    this.onOpen,
+  });
 
   final Event event;
+
+  /// Dia em que aparece (numa série, a ocorrência que se abre).
+  final DateTime day;
   final Store store;
 
   /// Chamado antes de abrir o editor (ex.: fechar o pop-up onde está).
@@ -820,7 +845,7 @@ class _EventTile extends StatelessWidget {
       subtitle: Text(_when),
       onTap: () {
         onOpen?.call();
-        openEventEditor(context, store, event: event);
+        openEventEditor(context, store, event: event, day: day);
       },
     );
   }

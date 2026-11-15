@@ -35,7 +35,10 @@ class TaskEditScreen extends StatefulWidget {
 class _TaskEditScreenState extends State<TaskEditScreen> {
   late final _title = TextEditingController(text: widget.task?.title ?? '');
   late final _notes = TextEditingController(text: widget.task?.notes ?? '');
-  late DateTime? _due = widget.task?.due ?? widget.due;
+  late DateTime? _due = widget.task != null
+      ? widget.task!.due
+      // Tarefas novas ficam para hoje, a não ser que se indique outro dia.
+      : (widget.due ?? dateOnly(DateTime.now()));
   late int _priority = widget.task?.priority ?? 0;
   late bool _done = widget.task?.done ?? false;
   late bool _active = widget.task?.active ?? false;

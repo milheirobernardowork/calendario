@@ -5,6 +5,7 @@ import '../models.dart';
 import '../store.dart';
 import 'calendar.dart';
 import 'event_edit.dart';
+import 'events_page.dart';
 import 'task_edit.dart';
 import 'tasks.dart';
 
@@ -48,9 +49,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) store.sync();
   }
 
+  /// Quantas vezes se entrou em Tarefas (a timeline volta a centrar hoje).
+  int _taskVisits = 0;
+
+  void _goTab(int i) => setState(() {
+    if (i == 1 && _tab != 1) _taskVisits++;
+    _tab = i;
+  });
+
   Future<void> _add() async {
     if (_tab == 0) {
       await openEventEditor(context, store, day: _selectedDay);
+    } else if (_tab == 2) {
+      final cats = store.categories;
+      await openEventEditor(
+        context,
+        store,
+        category: cats.isEmpty ? null : cats.first.id,
+      );
     } else {
       await openTaskEditor(context, store);
     }
@@ -94,13 +110,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           selectedDay: _selectedDay,
           onDaySelected: (d) => setState(() => _selectedDay = d),
         ),
-        TasksPage(store: store),
+        TasksPage(store: store, visit: _taskVisits),
+        EventsPage(store: store),
       ],
     );
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_tab == 0 ? 'Calendário' : 'Tarefas'),
+        title: Text(const ['Calendário', 'Tarefas', 'Eventos'][_tab]),
         actions: [
           ListenableBuilder(
             listenable: store,
@@ -125,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               children: [
                 NavigationRail(
                   selectedIndex: _tab,
-                  onDestinationSelected: (i) => setState(() => _tab = i),
+                  onDestinationSelected: _goTab,
                   labelType: NavigationRailLabelType.all,
                   destinations: const [
                     NavigationRailDestination(
@@ -138,6 +155,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       selectedIcon: Icon(Icons.check_circle),
                       label: Text('Tarefas'),
                     ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.emoji_events_outlined),
+                      selectedIcon: Icon(Icons.emoji_events),
+                      label: Text('Eventos'),
+                    ),
                   ],
                 ),
                 const VerticalDivider(width: 1),
@@ -149,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ? null
           : NavigationBar(
               selectedIndex: _tab,
-              onDestinationSelected: (i) => setState(() => _tab = i),
+              onDestinationSelected: _goTab,
               destinations: const [
                 NavigationDestination(
                   icon: Icon(Icons.calendar_month_outlined),
@@ -161,12 +183,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   selectedIcon: Icon(Icons.check_circle),
                   label: 'Tarefas',
                 ),
+                NavigationDestination(
+                  icon: Icon(Icons.emoji_events_outlined),
+                  selectedIcon: Icon(Icons.emoji_events),
+                  label: 'Eventos',
+                ),
               ],
             ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _add,
         icon: const Icon(Icons.add),
-        label: Text(_tab == 0 ? 'Evento' : 'Tarefa'),
+        label: Text(const ['Evento', 'Tarefa', 'Evento'][_tab]),
       ),
     );
   }

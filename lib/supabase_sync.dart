@@ -75,7 +75,7 @@ class SupabaseSync {
     }
     store.remote = SupabaseRemote(client);
     var channel = client.channel('agenda-$uid');
-    for (final table in const ['events', 'tasks']) {
+    for (final table in const ['events', 'tasks', 'categories']) {
       channel = channel.onPostgresChanges(
         event: PostgresChangeEvent.all,
         schema: 'public',

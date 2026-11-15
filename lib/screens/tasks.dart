@@ -8,9 +8,12 @@ import 'task_edit.dart';
 import 'task_timeline.dart';
 
 class TasksPage extends StatefulWidget {
-  const TasksPage({super.key, required this.store});
+  const TasksPage({super.key, required this.store, this.visit = 0});
 
   final Store store;
+
+  /// Muda sempre que se entra na página.
+  final int visit;
 
   @override
   State<TasksPage> createState() => _TasksPageState();
@@ -33,17 +36,22 @@ class _TasksPageState extends State<TasksPage> {
     final title = _quick.text.trim();
     if (title.isEmpty) return;
     widget.store.saveTask(
-      Task(id: newId(), title: title, updatedAt: DateTime.now().toUtc()),
+      Task(
+        id: newId(),
+        title: title,
+        due: dateOnly(DateTime.now()),
+        updatedAt: DateTime.now().toUtc(),
+      ),
     );
     _quick.clear();
     _quickFocus.requestFocus();
   }
 
-  /// Prioridade mais alta primeiro; depois data; depois título.
+  /// Data mais próxima primeiro; depois prioridade; depois título.
   static int _order(Task a, Task b) {
-    if (a.priority != b.priority) return b.priority - a.priority;
     final ad = a.due, bd = b.due;
     if (ad != null && bd != null && ad != bd) return ad.compareTo(bd);
+    if (a.priority != b.priority) return b.priority - a.priority;
     return a.title.toLowerCase().compareTo(b.title.toLowerCase());
   }
 
@@ -72,7 +80,9 @@ class _TasksPageState extends State<TasksPage> {
           ),
         ),
         Expanded(
-          child: _timeline ? TaskTimeline(store: widget.store) : _list(context),
+          child: _timeline
+              ? TaskTimeline(store: widget.store, visit: widget.visit)
+              : _list(context),
         ),
       ],
     );
@@ -88,20 +98,40 @@ class _TasksPageState extends State<TasksPage> {
         final done = all.where((t) => t.done).toList()
           ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
+        // Domingo desta semana: o que vem depois é "futuro".
+        final sunday = DateTime(
+          today.year,
+          today.month,
+          today.day + (7 - today.weekday),
+        );
+        final active = open.where((t) => t.active).toList();
+        final rest = open.where((t) => !t.active).toList();
+        // Ativas primeiro, depois esta semana, depois as restantes.
         final sections = <(String, List<Task>, bool)>[
+          ('Ativas', active, false),
           (
             'Atrasadas',
-            open.where((t) => t.due != null && t.due!.isBefore(today)).toList(),
+            rest.where((t) => t.due != null && t.due!.isBefore(today)).toList(),
             true,
           ),
-          ('Hoje', open.where((t) => t.due == today).toList(), false),
           (
-            'Próximas',
-            open.where((t) => t.due != null && t.due!.isAfter(today)).toList()
-              ..sort((a, b) => a.due!.compareTo(b.due!)),
+            'Esta semana',
+            rest
+                .where(
+                  (t) =>
+                      t.due != null &&
+                      !t.due!.isBefore(today) &&
+                      !t.due!.isAfter(sunday),
+                )
+                .toList(),
             false,
           ),
-          ('Sem data', open.where((t) => t.due == null).toList(), false),
+          (
+            'Futuras',
+            rest.where((t) => t.due != null && t.due!.isAfter(sunday)).toList(),
+            false,
+          ),
+          ('Sem data', rest.where((t) => t.due == null).toList(), false),
         ];
 
         final scheme = Theme.of(context).colorScheme;
@@ -274,4 +304,55 @@ class TaskTile extends StatelessWidget {
       onTap: () => openTaskEditor(context, store, task: task),
     );
   }
+}
+
+/// Campo pequeno para criar uma tarefa só com o título.
+class QuickAddTask extends StatefulWidget {
+  const QuickAddTask({super.key, required this.hint, required this.onAdd});
+
+  final String hint;
+  final ValueChanged<String> onAdd;
+
+  @override
+  State<QuickAddTask> createState() => _QuickAddTaskState();
+}
+
+class _QuickAddTaskState extends State<QuickAddTask> {
+  final _text = TextEditingController();
+  final _focus = FocusNode();
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final title = _text.text.trim();
+    if (title.isEmpty) return;
+    widget.onAdd(title);
+    _text.clear();
+    _focus.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+    child: TextField(
+      controller: _text,
+      focusNode: _focus,
+      textCapitalization: TextCapitalization.sentences,
+      onSubmitted: (_) => _submit(),
+      style: const TextStyle(fontSize: 14),
+      decoration: InputDecoration(
+        hintText: widget.hint,
+        prefixIcon: const Icon(Icons.add, size: 20),
+        prefixIconConstraints: const BoxConstraints(minWidth: 36),
+        isDense: true,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+      ),
+    ),
+  );
 }

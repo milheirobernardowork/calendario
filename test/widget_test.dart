@@ -97,7 +97,7 @@ void main() {
     phone.saveTask(task('Offline'));
     await settle(phone);
     expect(phone.status, SyncStatus.error);
-    expect(phone.pendingChanges, 1);
+    expect(phone.pendingChanges, 2); // a tarefa + a coluna "Corridas"
     expect(phone.tasks, hasLength(1));
 
     server.offline = false;
@@ -155,7 +155,7 @@ void main() {
     expect(a.tasks, hasLength(1));
     final b = Store(prefs);
     expect(b.tasks.single.title, 'Persistente');
-    expect(b.pendingChanges, 1);
+    expect(b.pendingChanges, 2); // a tarefa + a coluna "Corridas"
   });
 }
 
@@ -269,20 +269,61 @@ void recurrenceTests() {
     expect(phone.eventsOn(DateTime(2026, 11, 20)), isEmpty);
   });
 
-  test('mover desloca a série; copiar cria um evento único', () async {
+  test('mover ou copiar só afeta a ocorrência desse dia', () async {
     final s = await device(null);
     final e = weekly(const Recurrence(unit: 'week', weekdays: {1}));
     s.saveEvent(e);
     // Copiar a ocorrência de 30 nov para 2 dez.
     s.shiftEvent(e, 2, copy: true, from: DateTime(2026, 11, 30));
-    final copy = s.events.firstWhere((x) => x.id != e.id);
-    expect(copy.recurrence, isNull);
-    expect(copy.start, DateTime(2026, 12, 2, 7, 30));
-    // Mover a série um dia: passa a ser às terças.
-    s.shiftEvent(e, 1);
-    final moved = s.events.firstWhere((x) => x.id == e.id);
-    expect(moved.recurrence!.weekdays, {2});
-    expect(moved.occursOn(DateTime(2026, 11, 24)), isTrue);
-    expect(moved.occursOn(DateTime(2026, 11, 23)), isFalse);
+    expect(s.eventsOn(DateTime(2026, 12, 2)).single.recurrence, isNull);
+    expect(s.eventsOn(DateTime(2026, 11, 30)).single.id, e.id);
+    // Mover a ocorrência de 23 nov para dia 24.
+    s.shiftEvent(e, 1, from: DateTime(2026, 11, 23));
+    expect(s.eventsOn(DateTime(2026, 11, 23)), isEmpty);
+    final moved = s.eventsOn(DateTime(2026, 11, 24)).single;
+    expect(moved.id, isNot(e.id));
+    expect(moved.start, DateTime(2026, 11, 24, 7, 30));
+    // O resto da série fica igual.
+    expect(s.eventsOn(DateTime(2026, 11, 16)).single.id, e.id);
+    expect(s.eventsOn(DateTime(2026, 12, 7)).single.id, e.id);
+  });
+
+  test('ocorrência retirada sincroniza e conta para o total', () async {
+    final server = FakeRemote();
+    final pc = await device(server);
+    final phone = await device(server);
+    final e = weekly(const Recurrence(unit: 'week', weekdays: {1}, count: 3));
+    pc.saveEvent(e);
+    pc.excludeOccurrence(e, DateTime(2026, 11, 23));
+    await settle(pc);
+    await phone.sync();
+    final p = phone.events.single;
+    expect(p.occursOn(DateTime(2026, 11, 16)), isTrue);
+    expect(p.occursOn(DateTime(2026, 11, 23)), isFalse);
+    expect(p.occursOn(DateTime(2026, 11, 30)), isTrue);
+    expect(p.occursOn(DateTime(2026, 12, 7)), isFalse);
+    expect(p.nextOccurrence(DateTime(2026, 11, 17)), DateTime(2026, 11, 30));
+  });
+
+  test('colunas de Eventos: Corridas existe e sincroniza', () async {
+    final server = FakeRemote();
+    final pc = await device(server);
+    final phone = await device(server);
+    expect(pc.categories.single.id, EventColumn.corridasId);
+    final race = Event(
+      id: newId(),
+      title: 'Meia Maratona dos Descobrimentos',
+      start: DateTime(2026, 11, 29, 10),
+      end: DateTime(2026, 11, 29, 12),
+      category: EventColumn.corridasId,
+      updatedAt: DateTime.now().toUtc(),
+    );
+    pc.saveEvent(race);
+    pc.addCategory('Viagens');
+    await settle(pc);
+    await phone.sync();
+    expect(phone.categories.map((c) => c.name), ['Corridas', 'Viagens']);
+    expect(phone.events.single.category, EventColumn.corridasId);
+    expect(server.tables['categories'], hasLength(2));
   });
 }

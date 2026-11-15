@@ -26,6 +26,7 @@ enum SyncStatus { localOnly, synced, syncing, error }
 class Store extends ChangeNotifier {
   Store(this._prefs) {
     _load();
+    _ensureCorridas();
   }
 
   static const _tombstoneLifetime = Duration(days: 30);
@@ -33,6 +34,7 @@ class Store extends ChangeNotifier {
   final SharedPreferences _prefs;
   final Map<String, Event> _events = {};
   final Map<String, Task> _tasks = {};
+  final Map<String, EventColumn> _categories = {};
 
   Remote? _remote;
   bool _syncing = false;
@@ -44,7 +46,8 @@ class Store extends ChangeNotifier {
 
   int get pendingChanges =>
       _events.values.where((e) => e.dirty).length +
-      _tasks.values.where((t) => t.dirty).length;
+      _tasks.values.where((t) => t.dirty).length +
+      _categories.values.where((c) => c.dirty).length;
 
   /// Liga (ou desliga, com `null`) o servidor.
   set remote(Remote? r) {
@@ -96,17 +99,88 @@ class Store extends ChangeNotifier {
   void saveEvent(Event e) => _put(_events, e);
   void saveTask(Task t) => _put(_tasks, t);
 
+  // ------------------------------------------------------ colunas (Eventos)
+
+  /// Colunas da página Eventos, pela ordem em que aparecem.
+  List<EventColumn> get categories =>
+      _categories.values.where((c) => !c.isDeleted).toList()..sort(
+        (a, b) => a.position != b.position
+            ? a.position - b.position
+            : a.name.compareTo(b.name),
+      );
+
+  EventColumn? categoryById(String? id) {
+    final c = id == null ? null : _categories[id];
+    return c == null || c.isDeleted ? null : c;
+  }
+
+  EventColumn addCategory(String name) {
+    final last = categories.isEmpty ? 0 : categories.last.position + 1;
+    final c = EventColumn(
+      id: newId(),
+      name: name,
+      position: last,
+      updatedAt: DateTime.now().toUtc(),
+    );
+    _put(_categories, c);
+    return c;
+  }
+
+  void renameCategory(EventColumn c, String name) {
+    c.name = name;
+    _put(_categories, c);
+  }
+
+  /// Elimina a coluna; os eventos ficam no calendário, só sem coluna.
+  void deleteCategory(EventColumn c) {
+    for (final e in _events.values) {
+      if (e.category == c.id && !e.isDeleted) {
+        e.category = null;
+        _put(_events, e);
+      }
+    }
+    _put(_categories, c, delete: true);
+  }
+
+  /// A coluna "Corridas" existe sempre (a não ser que seja eliminada).
+  void _ensureCorridas() {
+    if (_categories.containsKey(EventColumn.corridasId)) return;
+    _categories[EventColumn.corridasId] = EventColumn(
+      id: EventColumn.corridasId,
+      name: 'Corridas',
+      // Data antiga: se já existir no servidor, a versão de lá prevalece.
+      updatedAt: DateTime.utc(2026),
+      dirty: true,
+    );
+  }
+
+  /// Retira de uma série a ocorrência que começa em [day].
+  void excludeOccurrence(Event series, DateTime day) {
+    series.recurrence = series.recurrence!.excluding(day);
+    saveEvent(series);
+  }
+
   void deleteEvent(Event e) => _put(_events, e, delete: true);
   void deleteTask(Task t) => _put(_tasks, t, delete: true);
 
   /// Desloca um evento [days] dias; com [copy] cria um duplicado e mantém
   /// o original. [from] é o dia de onde foi agarrado: numa série repetida,
   /// a cópia parte dessa ocorrência e não da primeira.
+  ///
+  /// Numa série, só a ocorrência de [from] é afetada: ao mover, sai da série
+  /// e passa a evento único no dia de destino.
   void shiftEvent(Event e, int days, {bool copy = false, DateTime? from}) {
-    var offset = days;
-    if (copy && e.recurrence != null && from != null) {
-      offset += daysBetween(e.start, from);
+    if (e.recurrence != null && from != null) {
+      final occurrence = e.occurrenceStartOn(from) ?? dateOnly(from);
+      if (!copy) excludeOccurrence(e, occurrence);
+      saveEvent(
+        e.occurrenceAt(
+          DateTime(occurrence.year, occurrence.month, occurrence.day + days),
+        ),
+      );
+      return;
     }
+    final offset = days;
     DateTime shift(DateTime t) =>
         DateTime(t.year, t.month, t.day + offset, t.hour, t.minute);
     saveEvent(
@@ -118,8 +192,8 @@ class Store extends ChangeNotifier {
         end: shift(e.end),
         allDay: e.allDay,
         color: e.color,
-        // Mover desloca a série inteira; a cópia é um evento único.
         recurrence: copy ? null : e.recurrence?.shifted(days),
+        category: e.category,
         updatedAt: e.updatedAt,
       ),
     );
@@ -150,6 +224,8 @@ class Store extends ChangeNotifier {
   Future<void> clearLocal() async {
     _events.clear();
     _tasks.clear();
+    _categories.clear();
+    _ensureCorridas();
     await _persist();
     notifyListeners();
   }
@@ -176,6 +252,7 @@ class Store extends ChangeNotifier {
 
     read('events', _events, Event.fromJson);
     read('tasks', _tasks, Task.fromJson);
+    read('categories', _categories, EventColumn.fromJson);
   }
 
   Future<void> _persist() async {
@@ -186,6 +263,10 @@ class Store extends ChangeNotifier {
     await _prefs.setString(
       'tasks',
       jsonEncode(_tasks.values.map((t) => t.toLocal()).toList()),
+    );
+    await _prefs.setString(
+      'categories',
+      jsonEncode(_categories.values.map((c) => c.toLocal()).toList()),
     );
   }
 
@@ -204,6 +285,7 @@ class Store extends ChangeNotifier {
     try {
       await _syncTable(remote, 'events', _events, Event.fromJson);
       await _syncTable(remote, 'tasks', _tasks, Task.fromJson);
+      await _syncTable(remote, 'categories', _categories, EventColumn.fromJson);
       lastError = null;
       if (_remote == remote) _status = SyncStatus.synced;
     } catch (e) {

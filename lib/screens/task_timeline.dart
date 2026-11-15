@@ -1,6 +1,6 @@
 // ignore_for_file: deprecated_member_use
-import 'dart:ui' show PointerDeviceKind;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../models.dart';
@@ -11,9 +11,12 @@ import 'task_edit.dart';
 /// Tarefas com data dispostas numa linha do tempo horizontal: uma coluna por
 /// dia, que se percorre para trás e para a frente.
 class TaskTimeline extends StatefulWidget {
-  const TaskTimeline({super.key, required this.store});
+  const TaskTimeline({super.key, required this.store, this.visit = 0});
 
   final Store store;
+
+  /// Muda sempre que se entra na página: volta a pôr hoje ao centro.
+  final int visit;
 
   @override
   State<TaskTimeline> createState() => _TaskTimelineState();
@@ -31,6 +34,40 @@ class _TaskTimelineState extends State<TaskTimeline> {
   /// Índice do primeiro dia à vista.
   late int _first = daysBetween(_origin, DateTime.now());
 
+  /// Número de dias à vista (sempre ímpar, para hoje ficar ao centro).
+  int _visible = 1;
+
+  /// Dia para onde a animação em curso vai (roda do rato).
+  int? _target;
+
+  int get _todayIndex => daysBetween(_origin, DateTime.now());
+
+  /// Primeiro dia à vista para que [index] fique ao centro.
+  int _centered(int index) => index - _visible ~/ 2;
+
+  void _onWheel(PointerSignalEvent e) {
+    if (e is! PointerScrollEvent) return;
+    GestureBinding.instance.pointerSignalResolver.register(e, (ev) {
+      final d = (ev as PointerScrollEvent).scrollDelta;
+      final v = d.dy != 0 ? d.dy : d.dx;
+      if (v == 0) return;
+      _goTo((_target ?? _first) + (v > 0 ? 1 : -1));
+    });
+  }
+
+  @override
+  void didUpdateWidget(TaskTimeline old) {
+    super.didUpdateWidget(old);
+    if (old.visit != widget.visit) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final c = _scroll;
+        if (mounted && c != null && c.hasClients) {
+          c.jumpTo(_centered(_todayIndex) * _extent);
+        }
+      });
+    }
+  }
+
   @override
   void dispose() {
     _scroll?.dispose();
@@ -42,16 +79,25 @@ class _TaskTimelineState extends State<TaskTimeline> {
     if (i != _first) setState(() => _first = i);
   }
 
-  void _goTo(int index) => _scroll?.animateTo(
-    index * _extent,
-    duration: const Duration(milliseconds: 250),
-    curve: Curves.easeOut,
-  );
+  void _goTo(int index) {
+    final c = _scroll;
+    if (c == null) return;
+    _target = index;
+    c
+        .animateTo(
+          index * _extent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        )
+        .whenComplete(() {
+          if (_target == index) _target = null;
+        });
+  }
 
   /// Depois de arrastar, alinha pela coluna mais próxima.
   bool _snap(ScrollEndNotification n) {
     final target = (n.metrics.pixels / _extent).round() * _extent;
-    if ((target - n.metrics.pixels).abs() > 0.5) {
+    if (_target == null && (target - n.metrics.pixels).abs() > 0.5) {
       Future.microtask(() => _goTo((target / _extent).round()));
     }
     return false;
@@ -95,13 +141,13 @@ class _TaskTimelineState extends State<TaskTimeline> {
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      fmtMonth(_dayAt(_first)),
+                      fmtMonth(_dayAt(_first + _visible ~/ 2)),
                       style: theme.textTheme.titleMedium,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   TextButton(
-                    onPressed: () => _goTo(daysBetween(_origin, today)),
+                    onPressed: () => _goTo(_centered(_todayIndex)),
                     child: const Text('Hoje'),
                   ),
                 ],
@@ -110,9 +156,13 @@ class _TaskTimelineState extends State<TaskTimeline> {
             Expanded(
               child: LayoutBuilder(
                 builder: (context, box) {
-                  final visible = (box.maxWidth / 170).floor().clamp(1, 7);
+                  var visible = (box.maxWidth / 170).floor().clamp(1, 7);
+                  if (visible.isEven) visible++;
+                  _visible = visible;
                   final extent = box.maxWidth / visible;
                   if (_scroll == null) {
+                    // Ao entrar na página, hoje aparece ao centro.
+                    _first = _centered(_todayIndex);
                     _scroll = ScrollController(
                       initialScrollOffset: _first * extent,
                     )..addListener(_onScroll);
@@ -124,28 +174,31 @@ class _TaskTimelineState extends State<TaskTimeline> {
                     });
                   }
                   _extent = extent;
-                  return NotificationListener<ScrollEndNotification>(
-                    onNotification: _snap,
-                    child: ScrollConfiguration(
-                      // Permite arrastar a linha do tempo também com o rato.
-                      behavior: ScrollConfiguration.of(context).copyWith(
-                        dragDevices: PointerDeviceKind.values.toSet(),
-                        scrollbars: false,
-                      ),
-                      child: ListView.builder(
-                        controller: _scroll,
-                        scrollDirection: Axis.horizontal,
-                        itemExtent: extent,
-                        itemCount: _count,
-                        itemBuilder: (context, i) {
-                          final day = _dayAt(i);
-                          return _DayColumn(
-                            day: day,
-                            today: today,
-                            tasks: byDay[day] ?? const [],
-                            store: widget.store,
-                          );
-                        },
+                  return Listener(
+                    onPointerSignal: _onWheel,
+                    child: NotificationListener<ScrollEndNotification>(
+                      onNotification: _snap,
+                      child: ScrollConfiguration(
+                        // Permite arrastar a linha do tempo também com o rato.
+                        behavior: ScrollConfiguration.of(context).copyWith(
+                          dragDevices: PointerDeviceKind.values.toSet(),
+                          scrollbars: false,
+                        ),
+                        child: ListView.builder(
+                          controller: _scroll,
+                          scrollDirection: Axis.horizontal,
+                          itemExtent: extent,
+                          itemCount: _count,
+                          itemBuilder: (context, i) {
+                            final day = _dayAt(i);
+                            return _DayColumn(
+                              day: day,
+                              today: today,
+                              tasks: byDay[day] ?? const [],
+                              store: widget.store,
+                            );
+                          },
+                        ),
                       ),
                     ),
                   );

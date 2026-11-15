@@ -33,6 +33,7 @@ class Recurrence {
     this.weekdays = const {},
     this.until,
     this.count,
+    this.exdates = const {},
   });
 
   /// 'day', 'week', 'month' ou 'year'.
@@ -50,6 +51,10 @@ class Recurrence {
 
   /// Número total de ocorrências.
   final int? count;
+
+  /// Dias em que a ocorrência foi retirada da série (editada à parte,
+  /// movida ou eliminada). Continuam a contar para [count].
+  final Set<DateTime> exdates;
 
   static DateTime _monday(DateTime d) =>
       DateTime(d.year, d.month, d.day - (d.weekday - 1));
@@ -87,7 +92,8 @@ class Recurrence {
       default:
         return false;
     }
-    return count == null || index < count!;
+    if (count != null && index >= count!) return false;
+    return !exdates.contains(d);
   }
 
   /// A mesma regra com tudo deslocado [days] dias.
@@ -99,6 +105,17 @@ class Recurrence {
         ? null
         : DateTime(until!.year, until!.month, until!.day + days),
     count: count,
+    exdates: {for (final d in exdates) DateTime(d.year, d.month, d.day + days)},
+  );
+
+  /// A mesma regra sem a ocorrência de [day].
+  Recurrence excluding(DateTime day) => Recurrence(
+    unit: unit,
+    interval: interval,
+    weekdays: weekdays,
+    until: until,
+    count: count,
+    exdates: {...exdates, dateOnly(day)},
   );
 
   factory Recurrence.fromJson(Map<String, dynamic> j) => Recurrence(
@@ -111,6 +128,10 @@ class Recurrence {
         ? null
         : dateOnly(DateTime.parse(j['until'] as String)),
     count: (j['count'] as num?)?.toInt(),
+    exdates: {
+      for (final d in (j['exdates'] as List? ?? []))
+        dateOnly(DateTime.parse(d as String)),
+    },
   );
 
   Map<String, dynamic> toJson() => {
@@ -119,6 +140,8 @@ class Recurrence {
     if (weekdays.isNotEmpty) 'weekdays': weekdays.toList()..sort(),
     if (until != null) 'until': _ymd(until!),
     if (count != null) 'count': count,
+    if (exdates.isNotEmpty)
+      'exdates': [for (final d in exdates.toList()..sort()) _ymd(d)],
   };
 }
 
@@ -161,6 +184,7 @@ class Event extends Record {
     this.allDay = false,
     this.color = 0,
     this.recurrence,
+    this.category,
     required super.updatedAt,
     super.deletedAt,
     super.dirty,
@@ -183,6 +207,10 @@ class Event extends Record {
   /// ocorrência.
   Recurrence? recurrence;
 
+  /// Coluna da página Eventos onde aparece (id de [EventColumn]); `null` =
+  /// evento normal, só no calendário.
+  String? category;
+
   /// Dias de calendário que cada ocorrência ocupa para além do primeiro.
   int get _extraDays {
     var last = dateOnly(end);
@@ -196,6 +224,49 @@ class Event extends Record {
 
   /// Cada ocorrência ocupa mais do que um dia?
   bool get multiDay => _extraDays > 0;
+
+  /// Dia em que começa a ocorrência que toca em [day] (`null` se nenhuma).
+  DateTime? occurrenceStartOn(DateTime day) {
+    final d = dateOnly(day);
+    for (var k = 0; k <= _extraDays; k++) {
+      final s = DateTime(d.year, d.month, d.day - k);
+      if (startsOn(s)) return s;
+    }
+    return null;
+  }
+
+  /// Próxima ocorrência a começar em [from] ou depois (até ~3 anos).
+  DateTime? nextOccurrence(DateTime from) {
+    final f = dateOnly(from);
+    if (recurrence == null) {
+      final s = dateOnly(start);
+      return s.isBefore(f) ? null : s;
+    }
+    var d = dateOnly(start).isAfter(f) ? dateOnly(start) : f;
+    for (var i = 0; i < 1100; i++, d = DateTime(d.year, d.month, d.day + 1)) {
+      if (startsOn(d)) return d;
+    }
+    return null;
+  }
+
+  /// Cópia de uma só ocorrência, deslocada para começar em [day], como
+  /// evento único com um id novo.
+  Event occurrenceAt(DateTime day, {String? id}) {
+    final offset = daysBetween(start, day);
+    DateTime shift(DateTime t) =>
+        DateTime(t.year, t.month, t.day + offset, t.hour, t.minute);
+    return Event(
+      id: id ?? newId(),
+      title: title,
+      notes: notes,
+      start: shift(start),
+      end: shift(end),
+      allDay: allDay,
+      color: color,
+      category: category,
+      updatedAt: DateTime.now().toUtc(),
+    );
+  }
 
   /// Há uma ocorrência a começar no dia indicado?
   bool startsOn(DateTime day) {
@@ -241,6 +312,7 @@ class Event extends Record {
           : Recurrence.fromJson(
               Map<String, dynamic>.from(j['recurrence'] as Map),
             ),
+      category: j['category'] as String?,
       updatedAt: DateTime.parse(j['updated_at'] as String).toUtc(),
       deletedAt: j['deleted_at'] == null
           ? null
@@ -259,6 +331,7 @@ class Event extends Record {
     'all_day': allDay,
     'color': color,
     'recurrence': recurrence?.toJson(),
+    'category': category,
     'updated_at': updatedAt.toIso8601String(),
     'deleted_at': deletedAt?.toIso8601String(),
   };
@@ -318,6 +391,47 @@ class Task extends Record {
     'done': done,
     'active': active,
     'priority': priority,
+    'updated_at': updatedAt.toIso8601String(),
+    'deleted_at': deletedAt?.toIso8601String(),
+  };
+}
+
+/// Coluna da página Eventos (ex.: "Corridas").
+class EventColumn extends Record {
+  EventColumn({
+    required super.id,
+    required this.name,
+    this.position = 0,
+    required super.updatedAt,
+    super.deletedAt,
+    super.dirty,
+  });
+
+  /// Id fixo da coluna "Corridas", criada automaticamente: sendo igual em
+  /// todos os dispositivos, nunca fica duplicada.
+  static const corridasId = 'c0a1c0a1-0000-4000-8000-00000000c0a1';
+
+  String name;
+
+  /// Ordem das colunas (menor = mais à esquerda).
+  int position;
+
+  factory EventColumn.fromJson(Map<String, dynamic> j) => EventColumn(
+    id: j['id'] as String,
+    name: j['name'] as String? ?? '',
+    position: (j['position'] as num?)?.toInt() ?? 0,
+    updatedAt: DateTime.parse(j['updated_at'] as String).toUtc(),
+    deletedAt: j['deleted_at'] == null
+        ? null
+        : DateTime.parse(j['deleted_at'] as String).toUtc(),
+    dirty: j['dirty'] as bool? ?? false,
+  );
+
+  @override
+  Map<String, dynamic> toRemote() => {
+    'id': id,
+    'name': name,
+    'position': position,
     'updated_at': updatedAt.toIso8601String(),
     'deleted_at': deletedAt?.toIso8601String(),
   };

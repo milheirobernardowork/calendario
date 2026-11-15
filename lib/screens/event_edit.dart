@@ -12,21 +12,38 @@ Future<void> openEventEditor(
   Store store, {
   Event? event,
   DateTime? day,
+  String? category,
 }) {
   return Navigator.of(context).push(
     MaterialPageRoute(
       fullscreenDialog: true,
-      builder: (_) => EventEditScreen(store: store, event: event, day: day),
+      builder: (_) => EventEditScreen(
+        store: store,
+        event: event,
+        day: day,
+        category: category,
+      ),
     ),
   );
 }
 
 class EventEditScreen extends StatefulWidget {
-  const EventEditScreen({super.key, required this.store, this.event, this.day});
+  const EventEditScreen({
+    super.key,
+    required this.store,
+    this.event,
+    this.day,
+    this.category,
+  });
 
   final Store store;
   final Event? event;
+
+  /// Dia em que se tocou. Numa série, indica a ocorrência a editar.
   final DateTime? day;
+
+  /// Coluna da página Eventos já escolhida para um evento novo.
+  final String? category;
 
   @override
   State<EventEditScreen> createState() => _EventEditScreenState();
@@ -39,6 +56,12 @@ class _EventEditScreenState extends State<EventEditScreen> {
   late DateTime _end;
   late bool _allDay;
   late int _color;
+  String? _category;
+
+  /// Numa série: dia da ocorrência aberta. Com [_wholeSeries] a falso, só
+  /// essa ocorrência é alterada.
+  DateTime? _occurrence;
+  bool _wholeSeries = false;
 
   // Repetição.
   bool _repeat = false;
@@ -62,11 +85,16 @@ class _EventEditScreenState extends State<EventEditScreen> {
     // O painel da semana mostra o título em direto.
     _title.addListener(() => setState(() {}));
     if (e != null) {
-      _start = e.start;
-      _end = e.end;
       _allDay = e.allDay;
       _color = e.color;
+      _category = e.category;
       _anchor = widget.day;
+      if (e.recurrence != null) {
+        _occurrence = e.occurrenceStartOn(widget.day ?? e.start);
+      }
+      // Por omissão edita-se só a ocorrência em que se tocou.
+      _wholeSeries = _occurrence == null;
+      _loadDates();
       final r = e.recurrence;
       if (r != null) {
         _repeat = true;
@@ -94,8 +122,20 @@ class _EventEditScreenState extends State<EventEditScreen> {
       _end = _start.add(const Duration(hours: 1));
       _allDay = false;
       _color = 0;
+      _category = widget.category;
     }
   }
+
+  /// Datas do formulário: as da série ou as da ocorrência aberta.
+  void _loadDates() {
+    final e = widget.event!;
+    final o = _instanceMode ? e.occurrenceAt(_occurrence!) : e;
+    _start = o.start;
+    _end = o.end;
+  }
+
+  /// A editar uma só ocorrência de uma série?
+  bool get _instanceMode => _occurrence != null && !_wholeSeries;
 
   @override
   void dispose() {
@@ -154,8 +194,11 @@ class _EventEditScreenState extends State<EventEditScreen> {
   /// semana o distinguir dos existentes).
   late final String _id = widget.event?.id ?? newId();
 
+  /// Id do evento único que substitui a ocorrência editada à parte.
+  late final String _instanceId = newId();
+
   Recurrence? get _recurrence {
-    if (!_repeat) return null;
+    if (!_repeat || _instanceMode) return null;
     final weekly = _unit == 'week';
     return Recurrence(
       unit: _unit,
@@ -166,6 +209,8 @@ class _EventEditScreenState extends State<EventEditScreen> {
       count: _endMode == 'count'
           ? (int.tryParse(_count.text) ?? 1).clamp(1, 9999)
           : null,
+      // Ocorrências já retiradas da série mantêm-se retiradas.
+      exdates: widget.event?.recurrence?.exdates ?? const {},
     );
   }
 
@@ -314,7 +359,7 @@ class _EventEditScreenState extends State<EventEditScreen> {
   Event get _draft {
     final title = _title.text.trim();
     return Event(
-      id: _id,
+      id: _instanceMode ? _instanceId : _id,
       title: title.isEmpty ? '(Sem título)' : title,
       notes: _notes.text.trim(),
       start: _allDay ? dateOnly(_start) : _start,
@@ -322,12 +367,17 @@ class _EventEditScreenState extends State<EventEditScreen> {
       allDay: _allDay,
       color: _color,
       recurrence: _recurrence,
+      category: _category,
       updatedAt: DateTime.now().toUtc(),
     );
   }
 
   void _save() {
     if (!_valid) return;
+    if (_instanceMode) {
+      // A ocorrência sai da série e passa a evento único.
+      widget.store.excludeOccurrence(widget.event!, _occurrence!);
+    }
     widget.store.saveEvent(_draft);
     Navigator.pop(context);
   }
@@ -338,7 +388,16 @@ class _EventEditScreenState extends State<EventEditScreen> {
   );
 
   Future<void> _delete() async {
-    if (!await confirmDelete(context, 'evento')) return;
+    if (_instanceMode) {
+      if (!await confirmDelete(context, 'só este dia da série')) return;
+      widget.store.excludeOccurrence(widget.event!, _occurrence!);
+      if (mounted) Navigator.pop(context);
+      return;
+    }
+    final series = widget.event!.recurrence != null;
+    if (!await confirmDelete(context, series ? 'a série inteira' : 'evento')) {
+      return;
+    }
     widget.store.deleteEvent(widget.event!);
     if (mounted) Navigator.pop(context);
   }
@@ -391,6 +450,31 @@ class _EventEditScreenState extends State<EventEditScreen> {
             onSubmitted: (_) => _save(),
           ),
           const SizedBox(height: 12),
+          if (_occurrence != null) ...[
+            SegmentedButton<bool>(
+              showSelectedIcon: false,
+              style: bigButton,
+              segments: [
+                ButtonSegment(
+                  value: false,
+                  icon: const Icon(Icons.event),
+                  label: Text('Só ${fmtDateShort(_occurrence!)}'),
+                ),
+                const ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.repeat),
+                  label: Text('Toda a série'),
+                ),
+              ],
+              selected: {_wholeSeries},
+              onSelectionChanged: (s) => setState(() {
+                _wholeSeries = s.first;
+                _anchor = _occurrence;
+                _loadDates();
+              }),
+            ),
+            const SizedBox(height: 8),
+          ],
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Dia inteiro', style: TextStyle(fontSize: 17)),
@@ -408,7 +492,9 @@ class _EventEditScreenState extends State<EventEditScreen> {
               ),
             ),
           const SizedBox(height: 8),
-          ..._repeatSection(context),
+          if (!_instanceMode) ..._repeatSection(context),
+          const SizedBox(height: 8),
+          _categoryRow(),
           const SizedBox(height: 20),
           Wrap(
             spacing: 12,
@@ -488,6 +574,37 @@ class _EventEditScreenState extends State<EventEditScreen> {
     );
   }
 
+  /// Escolha da coluna da página Eventos.
+  Widget _categoryRow() {
+    final cats = widget.store.categories;
+    final value = cats.any((c) => c.id == _category) ? _category : null;
+    return Row(
+      children: [
+        const Icon(Icons.emoji_events_outlined),
+        const SizedBox(width: 12),
+        const Text('Eventos', style: TextStyle(fontSize: 17)),
+        const SizedBox(width: 16),
+        Expanded(
+          child: DropdownButton<String?>(
+            isExpanded: true,
+            value: value,
+            style: Theme.of(context).textTheme.bodyLarge!
+                .copyWith(fontSize: 17),
+            items: [
+              const DropdownMenuItem(
+                value: null,
+                child: Text('Nenhuma coluna'),
+              ),
+              for (final c in cats)
+                DropdownMenuItem(value: c.id, child: Text(c.name)),
+            ],
+            onChanged: (v) => setState(() => _category = v),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final divider = Theme.of(context).colorScheme.outlineVariant;
@@ -497,8 +614,14 @@ class _EventEditScreenState extends State<EventEditScreen> {
         store: widget.store,
         draft: _draft,
         anchor: _anchor,
+        // A ocorrência editada à parte não aparece também como parte da série.
+        hide: _instanceMode
+            ? (e, day) =>
+                  e.id == widget.event!.id &&
+                  e.occurrenceStartOn(day) == _occurrence
+            : null,
         // Numa série, tocar num dia não muda a data de início.
-        onDayTap: _repeat ? null : _moveToDay,
+        onDayTap: _repeat && !_instanceMode ? null : _moveToDay,
       ),
     );
     // Com o teclado aberto (telemóvel) não sobra espaço para a semana.
