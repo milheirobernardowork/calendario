@@ -143,7 +143,7 @@ class _TasksPageState extends State<TasksPage> {
                     color: alert ? scheme.error : null,
                   ),
                   for (final t in items)
-                    _TaskTile(task: t, store: widget.store, today: today),
+                    TaskTile(task: t, store: widget.store, today: today),
                 ],
               if (done.isNotEmpty) ...[
                 InkWell(
@@ -163,7 +163,7 @@ class _TasksPageState extends State<TasksPage> {
                 ),
                 if (_showDone)
                   for (final t in done)
-                    _TaskTile(task: t, store: widget.store, today: today),
+                    TaskTile(task: t, store: widget.store, today: today),
               ],
             ],
           ),
@@ -194,30 +194,39 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _TaskTile extends StatelessWidget {
-  const _TaskTile({
+/// Linha de uma tarefa: concluir, marcar como ativa, abrir para editar.
+class TaskTile extends StatelessWidget {
+  const TaskTile({
+    super.key,
     required this.task,
     required this.store,
     required this.today,
+    this.compact = false,
   });
 
   final Task task;
   final Store store;
   final DateTime today;
 
+  /// Versão estreita (painel lateral do calendário): sem botões à direita.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final due = task.due;
     final overdue = !task.done && due != null && due.isBefore(today);
-    final flag = priorityColor(task.priority);
+    final flag = task.done ? null : priorityColor(task.priority);
     return ListTile(
+      dense: compact,
+      horizontalTitleGap: compact ? 4 : null,
+      contentPadding: compact
+          ? const EdgeInsets.only(left: 4, right: 12)
+          : null,
       leading: Checkbox(
         value: task.done,
         shape: const CircleBorder(),
-        side: flag == null || task.done
-            ? null
-            : BorderSide(color: flag, width: 2),
+        side: flag == null ? null : BorderSide(color: flag, width: 2),
         onChanged: (_) => store.toggleTask(task),
       ),
       title: Text(
@@ -237,12 +246,30 @@ class _TaskTile extends StatelessWidget {
               due == today ? 'Hoje' : fmtDate(due),
               style: TextStyle(color: overdue ? scheme.error : null),
             ),
-      trailing: flag == null || task.done
+      trailing: compact
           ? null
-          : Tooltip(
-              message:
-                  'Prioridade ${priorityNames[task.priority].toLowerCase()}',
-              child: Icon(Icons.flag, color: flag, size: 20),
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (flag != null)
+                  Tooltip(
+                    message:
+                        'Prioridade ${priorityNames[task.priority].toLowerCase()}',
+                    child: Icon(Icons.flag, color: flag, size: 20),
+                  ),
+                IconButton(
+                  tooltip: task.active
+                      ? 'Deixar de ser ativa'
+                      : 'Marcar como ativa',
+                  isSelected: task.active,
+                  icon: Icon(Icons.bolt_outlined, color: scheme.outline),
+                  selectedIcon: const Icon(
+                    Icons.bolt,
+                    color: Color(0xFFF2A100),
+                  ),
+                  onPressed: () => store.toggleActive(task),
+                ),
+              ],
             ),
       onTap: () => openTaskEditor(context, store, task: task),
     );

@@ -145,6 +145,7 @@ class Task extends Record {
     this.notes = '',
     this.due,
     this.done = false,
+    this.active = false,
     this.priority = 0,
     required super.updatedAt,
     super.deletedAt,
@@ -158,6 +159,9 @@ class Task extends Record {
   DateTime? due;
   bool done;
 
+  /// Marcada como "ativa": aparece no painel lateral do calendário.
+  bool active;
+
   /// 0 = nenhuma, 1 = baixa, 2 = média, 3 = alta.
   int priority;
 
@@ -169,6 +173,7 @@ class Task extends Record {
       notes: j['notes'] as String? ?? '',
       due: due == null ? null : dateOnly(DateTime.parse(due)),
       done: j['done'] as bool? ?? false,
+      active: j['active'] as bool? ?? false,
       priority: (j['priority'] as num?)?.toInt() ?? 0,
       updatedAt: DateTime.parse(j['updated_at'] as String).toUtc(),
       deletedAt: j['deleted_at'] == null
@@ -185,6 +190,7 @@ class Task extends Record {
     'notes': notes,
     'due_date': due == null ? null : _ymd(due!),
     'done': done,
+    'active': active,
     'priority': priority,
     'updated_at': updatedAt.toIso8601String(),
     'deleted_at': deletedAt?.toIso8601String(),

@@ -100,6 +100,11 @@ class Store extends ChangeNotifier {
     );
   }
 
+  void toggleActive(Task t) {
+    t.active = !t.active;
+    saveTask(t);
+  }
+
   void toggleTask(Task t) {
     t.done = !t.done;
     saveTask(t);

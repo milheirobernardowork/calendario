@@ -21,10 +21,14 @@ create table if not exists public.tasks (
   notes text not null default '',
   due_date date,
   done boolean not null default false,
+  active boolean not null default false,
   priority integer not null default 0,
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
+
+-- Colunas acrescentadas depois da primeira versão.
+alter table public.tasks add column if not exists active boolean not null default false;
 
 create index if not exists events_user_idx on public.events (user_id);
 create index if not exists tasks_user_idx on public.tasks (user_id);

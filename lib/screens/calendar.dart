@@ -7,6 +7,7 @@ import '../models.dart';
 import '../store.dart';
 import 'common.dart';
 import 'event_edit.dart';
+import 'tasks.dart';
 
 /// O que é arrastado: o evento e o dia de onde foi agarrado.
 typedef _Drag = ({Event event, DateTime day});
@@ -308,7 +309,11 @@ class _CalendarPageState extends State<CalendarPage> {
         final hovering = candidates.isNotEmpty;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () => _select(day),
+          // Espaço em branco: seleciona o dia e começa um evento novo nele.
+          onTap: () {
+            _select(day);
+            openEventEditor(context, widget.store, day: day);
+          },
           child: Container(
             decoration: BoxDecoration(
               color: hovering
@@ -327,26 +332,31 @@ class _CalendarPageState extends State<CalendarPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Center(
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isToday ? scheme.primary : null,
-                    ),
-                    child: Text(
-                      '${day.day}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: selected || isToday
-                            ? FontWeight.w700
-                            : FontWeight.w400,
-                        color: isToday
-                            ? scheme.onPrimary
-                            : outside
-                            ? scheme.outline
-                            : scheme.onSurface,
+                  // O número só seleciona o dia (atualiza o painel lateral).
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _select(day),
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isToday ? scheme.primary : null,
+                      ),
+                      child: Text(
+                        '${day.day}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: selected || isToday
+                              ? FontWeight.w700
+                              : FontWeight.w400,
+                          color: isToday
+                              ? scheme.onPrimary
+                              : outside
+                              ? scheme.outline
+                              : scheme.onSurface,
+                        ),
                       ),
                     ),
                   ),
@@ -365,12 +375,29 @@ class _CalendarPageState extends State<CalendarPage> {
                   SizedBox(
                     height: EventChipBox.extent,
                     child: Center(
-                      child: Text(
-                        '+$hidden',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onSurfaceVariant,
+                      child: Tooltip(
+                        message: 'Ver os eventos deste dia',
+                        child: Material(
+                          color: scheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () => _showDay(day),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 2,
+                              ),
+                              child: Text(
+                                '+$hidden',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: scheme.onSecondaryContainer,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -381,6 +408,93 @@ class _CalendarPageState extends State<CalendarPage> {
         );
       },
     );
+  }
+
+  /// Pop-up com todos os eventos de um dia (para os dias encolhidos).
+  Future<void> _showDay(DateTime day) {
+    _select(day);
+    return showDialog<void>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(fmtDayLong(day)),
+        contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        content: SizedBox(
+          width: 380,
+          child: ListenableBuilder(
+            listenable: widget.store,
+            builder: (context, _) => ListView(
+              shrinkWrap: true,
+              children: [
+                for (final e in widget.store.eventsOn(day))
+                  _EventTile(
+                    event: e,
+                    store: widget.store,
+                    onOpen: () => Navigator.pop(dialog),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              Navigator.pop(dialog);
+              openEventEditor(context, widget.store, day: day);
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Novo evento'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: const Text('Fechar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _section(BuildContext context, String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.labelLarge!
+          .copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+    ),
+  );
+
+  Widget _empty(BuildContext context, String text) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+    child: Text(
+      text,
+      style: TextStyle(color: Theme.of(context).colorScheme.outline),
+    ),
+  );
+
+  /// Tarefas marcadas como ativas e tarefas com data no dia selecionado.
+  List<Widget> _dayTasks(BuildContext context) {
+    final day = widget.selectedDay;
+    final today = dateOnly(DateTime.now());
+    final tasks = widget.store.tasks
+      ..sort((a, b) {
+        if (a.done != b.done) return a.done ? 1 : -1;
+        if (a.priority != b.priority) return b.priority - a.priority;
+        return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      });
+    final active = tasks.where((t) => t.active && !t.done).toList();
+    // As ativas já estão na lista de cima; não repetir.
+    final forDay = tasks
+        .where((t) => t.due == day && !(t.active && !t.done))
+        .toList();
+    Widget tile(Task t) =>
+        TaskTile(task: t, store: widget.store, today: today, compact: true);
+    return [
+      _section(context, 'Tarefas ativas'),
+      if (active.isEmpty) _empty(context, 'Nenhuma tarefa ativa'),
+      ...active.map(tile),
+      _section(context, 'Tarefas deste dia'),
+      if (forDay.isEmpty) _empty(context, 'Nenhuma tarefa para este dia'),
+      ...forDay.map(tile),
+    ];
   }
 
   Widget _dayHeader(BuildContext context) => Padding(
@@ -445,10 +559,10 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                   VerticalDivider(width: 1, color: divider),
                   SizedBox(
-                    width: 320,
+                    width: 250,
                     child: ListView(
                       padding: const EdgeInsets.only(bottom: 88),
-                      children: [_dayHeader(context), ..._dayEvents(context)],
+                      children: [_dayHeader(context), ..._dayTasks(context)],
                     ),
                   ),
                 ],
@@ -467,6 +581,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       Divider(height: 1, color: divider),
                       _dayHeader(context),
                       ..._dayEvents(context),
+                      ..._dayTasks(context),
                     ],
                   ),
                 ),
@@ -534,10 +649,13 @@ class _EventChip extends StatelessWidget {
 }
 
 class _EventTile extends StatelessWidget {
-  const _EventTile({required this.event, required this.store});
+  const _EventTile({required this.event, required this.store, this.onOpen});
 
   final Event event;
   final Store store;
+
+  /// Chamado antes de abrir o editor (ex.: fechar o pop-up onde está).
+  final VoidCallback? onOpen;
 
   String get _when {
     final e = event;
@@ -565,7 +683,10 @@ class _EventTile extends StatelessWidget {
       ),
       title: Text(event.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Text(_when),
-      onTap: () => openEventEditor(context, store, event: event),
+      onTap: () {
+        onOpen?.call();
+        openEventEditor(context, store, event: event);
+      },
     );
   }
 }

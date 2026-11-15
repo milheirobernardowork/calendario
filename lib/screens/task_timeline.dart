@@ -296,6 +296,11 @@ class _TaskCard extends StatelessWidget {
           padding: const EdgeInsets.only(right: 8, top: 2, bottom: 2),
           child: Row(
             children: [
+              if (task.active && !task.done)
+                const Padding(
+                  padding: EdgeInsets.only(left: 4),
+                  child: Icon(Icons.bolt, size: 16, color: Color(0xFFF2A100)),
+                ),
               Checkbox(
                 value: task.done,
                 shape: const CircleBorder(),

@@ -38,6 +38,7 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
   late DateTime? _due = widget.task?.due ?? widget.due;
   late int _priority = widget.task?.priority ?? 0;
   late bool _done = widget.task?.done ?? false;
+  late bool _active = widget.task?.active ?? false;
 
   @override
   void initState() {
@@ -73,6 +74,7 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
         notes: _notes.text.trim(),
         due: _due,
         done: _done,
+        active: _active,
         priority: _priority,
         updatedAt: DateTime.now().toUtc(),
       ),
@@ -127,6 +129,14 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
                 value: _done,
                 onChanged: (v) => setState(() => _done = v),
               ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.bolt),
+              title: const Text('Ativa'),
+              subtitle: const Text('Aparece no painel lateral do calendário'),
+              value: _active,
+              onChanged: (v) => setState(() => _active = v),
+            ),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.event_outlined),
