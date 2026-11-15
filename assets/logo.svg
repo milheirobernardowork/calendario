@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2F4E96"/>
+      <stop offset="1" stop-color="#172646"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- folha do calendário -->
+  <rect x="72" y="92" width="368" height="356" rx="44" fill="#FFFFFF"/>
+  <path d="M72 136a44 44 0 0 1 44-44h280a44 44 0 0 1 44 44v40H72z" fill="#E0201B"/>
+  <rect x="150" y="62" width="30" height="72" rx="15" fill="#DDE3EE"/>
+  <rect x="332" y="62" width="30" height="72" rx="15" fill="#DDE3EE"/>
+  <!-- cabeça de lobo -->
+  <g transform="translate(256 308) scale(0.9) translate(-256 -290)">
+    <path d="M256 222 L214 196 L168 128 L152 222 L112 300 L160 338 L208 408 L256 440 L304 408 L352 338 L400 300 L360 222 L344 128 L298 196 Z" fill="#4A5868"/>
+    <!-- interior das orelhas -->
+    <path d="M176 160 L204 204 L170 222 Z" fill="#C9D1DC"/>
+    <path d="M336 160 L308 204 L342 222 Z" fill="#C9D1DC"/>
+    <!-- faces claras -->
+    <path d="M112 300 L160 338 L208 408 L196 330 L160 280 Z" fill="#8E9BAB"/>
+    <path d="M400 300 L352 338 L304 408 L316 330 L352 280 Z" fill="#8E9BAB"/>
+    <!-- focinho -->
+    <path d="M256 288 L212 340 L226 404 L256 440 L286 404 L300 340 Z" fill="#EEF1F6"/>
+    <!-- testa -->
+    <path d="M256 222 L232 262 L256 300 L280 262 Z" fill="#364250"/>
+    <!-- olhos -->
+    <path d="M178 270 L226 290 L218 304 L190 296 Z" fill="#F2B233"/>
+    <path d="M334 270 L286 290 L294 304 L322 296 Z" fill="#F2B233"/>
+    <!-- nariz -->
+    <path d="M236 396 L276 396 L256 424 Z" fill="#1B2230"/>
+  </g>
+</svg>

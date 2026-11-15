@@ -1,4 +1,4 @@
-# Agenda
+# WolfCal
 
 App de calendário e tarefas para **Windows** e **Android**, feita em Flutter,
 com sincronização através do Supabase.

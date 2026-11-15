@@ -1,6 +1,6 @@
 {
-    "name": "agenda",
-    "short_name": "agenda",
+    "name": "WolfCal",
+    "short_name": "WolfCal",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

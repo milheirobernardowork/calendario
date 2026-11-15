@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../store.dart';
 import 'common.dart';
+import 'week_panel.dart';
 
 Future<void> openEventEditor(
   BuildContext context,
@@ -44,6 +45,8 @@ class _EventEditScreenState extends State<EventEditScreen> {
     final e = widget.event;
     _title = TextEditingController(text: e?.title ?? '');
     _notes = TextEditingController(text: e?.notes ?? '');
+    // O painel da semana mostra o título em direto.
+    _title.addListener(() => setState(() {}));
     if (e != null) {
       _start = e.start;
       _end = e.end;
@@ -115,24 +118,35 @@ class _EventEditScreenState extends State<EventEditScreen> {
     start ? _setStart(v) : setState(() => _end = v);
   }
 
+  /// Id do evento em edição (um novo recebe já o seu, para o painel da
+  /// semana o distinguir dos existentes).
+  late final String _id = widget.event?.id ?? newId();
+
+  /// O evento tal como está no formulário.
+  Event get _draft {
+    final title = _title.text.trim();
+    return Event(
+      id: _id,
+      title: title.isEmpty ? '(Sem título)' : title,
+      notes: _notes.text.trim(),
+      start: _allDay ? dateOnly(_start) : _start,
+      end: _allDay ? dateOnly(_end) : _end,
+      allDay: _allDay,
+      color: _color,
+      updatedAt: DateTime.now().toUtc(),
+    );
+  }
+
   void _save() {
     if (!_valid) return;
-    final old = widget.event;
-    final title = _title.text.trim();
-    widget.store.saveEvent(
-      Event(
-        id: old?.id ?? newId(),
-        title: title.isEmpty ? '(Sem título)' : title,
-        notes: _notes.text.trim(),
-        start: _allDay ? dateOnly(_start) : _start,
-        end: _allDay ? dateOnly(_end) : _end,
-        allDay: _allDay,
-        color: _color,
-        updatedAt: DateTime.now().toUtc(),
-      ),
-    );
+    widget.store.saveEvent(_draft);
     Navigator.pop(context);
   }
+
+  /// Tocar num dia do painel da semana passa o evento para esse dia.
+  void _moveToDay(DateTime day) => _setStart(
+    DateTime(day.year, day.month, day.day, _start.hour, _start.minute),
+  );
 
   Future<void> _delete() async {
     if (!await confirmDelete(context, 'evento')) return;
@@ -142,121 +156,183 @@ class _EventEditScreenState extends State<EventEditScreen> {
 
   Widget _whenRow(String label, {required bool start}) {
     final v = start ? _start : _end;
-    return Row(
-      children: [
-        SizedBox(width: 56, child: Text(label)),
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 64,
+            child: Text(label, style: const TextStyle(fontSize: 16)),
+          ),
+          Expanded(
+            child: FilledButton.tonal(
+              style: bigButton,
               onPressed: () => _pickDate(start: start),
-              child: Text(fmtDate(v)),
+              child: Text(fmtDate(v), overflow: TextOverflow.ellipsis),
             ),
           ),
-        ),
-        if (!_allDay)
-          TextButton(
-            onPressed: () => _pickTime(start: start),
-            child: Text(fmtTime(v)),
+          if (!_allDay) ...[
+            const SizedBox(width: 8),
+            FilledButton.tonal(
+              style: bigButton,
+              onPressed: () => _pickTime(start: start),
+              child: Text(fmtTime(v)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _form(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Centered(
+      child: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          TextField(
+            controller: _title,
+            autofocus: widget.event == null,
+            textCapitalization: TextCapitalization.sentences,
+            style: Theme.of(context).textTheme.headlineSmall,
+            decoration: const InputDecoration(
+              hintText: 'Título',
+              contentPadding: EdgeInsets.symmetric(vertical: 14),
+            ),
+            onSubmitted: (_) => _save(),
           ),
-      ],
+          const SizedBox(height: 12),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Dia inteiro', style: TextStyle(fontSize: 17)),
+            value: _allDay,
+            onChanged: (v) => setState(() => _allDay = v),
+          ),
+          _whenRow('Início', start: true),
+          _whenRow('Fim', start: false),
+          if (!_valid)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'O fim tem de ser depois do início.',
+                style: TextStyle(color: scheme.error, fontSize: 15),
+              ),
+            ),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (var i = 0; i < eventColors.length; i++)
+                Tooltip(
+                  message: eventColorNames[i],
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => setState(() => _color = i),
+                    child: Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: eventColors[i],
+                        shape: BoxShape.circle,
+                        border: _color == i
+                            ? Border.all(color: scheme.onSurface, width: 3)
+                            : null,
+                      ),
+                      child: _color == i
+                          ? Icon(
+                              Icons.check,
+                              size: 24,
+                              color: onColor(eventColors[i]),
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          TextField(
+            controller: _notes,
+            minLines: 3,
+            maxLines: 8,
+            textCapitalization: TextCapitalization.sentences,
+            style: const TextStyle(fontSize: 16),
+            decoration: const InputDecoration(
+              labelText: 'Notas',
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              if (widget.event != null)
+                OutlinedButton.icon(
+                  style: bigButton.copyWith(
+                    foregroundColor: WidgetStatePropertyAll(scheme.error),
+                  ),
+                  onPressed: _delete,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Eliminar'),
+                ),
+              TextButton(
+                style: bigButton,
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                style: bigButton,
+                onPressed: _valid ? _save : null,
+                icon: const Icon(Icons.check),
+                label: const Text('Guardar'),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final divider = Theme.of(context).colorScheme.outlineVariant;
+    final week = ListenableBuilder(
+      listenable: widget.store,
+      builder: (context, _) =>
+          WeekPanel(store: widget.store, draft: _draft, onDayTap: _moveToDay),
+    );
+    // Com o teclado aberto (telemóvel) não sobra espaço para a semana.
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 64,
         title: Text(widget.event == null ? 'Novo evento' : 'Editar evento'),
-        actions: [
-          if (widget.event != null)
-            IconButton(
-              tooltip: 'Eliminar',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: _delete,
-            ),
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilledButton(
-              onPressed: _valid ? _save : null,
-              child: const Text('Guardar'),
-            ),
-          ),
-        ],
       ),
-      body: Centered(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            TextField(
-              controller: _title,
-              autofocus: widget.event == null,
-              textCapitalization: TextCapitalization.sentences,
-              style: Theme.of(context).textTheme.titleLarge,
-              decoration: const InputDecoration(hintText: 'Título'),
-              onSubmitted: (_) => _save(),
-            ),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Dia inteiro'),
-              value: _allDay,
-              onChanged: (v) => setState(() => _allDay = v),
-            ),
-            _whenRow('Início', start: true),
-            _whenRow('Fim', start: false),
-            if (!_valid)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'O fim tem de ser depois do início.',
-                  style: TextStyle(color: scheme.error),
-                ),
+      // Metade formulário, metade semana do evento: lado a lado em janelas
+      // largas, um por cima do outro no telemóvel.
+      body: LayoutBuilder(
+        builder: (context, box) => box.maxWidth >= 840
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _form(context)),
+                  VerticalDivider(width: 1, color: divider),
+                  Expanded(child: week),
+                ],
+              )
+            : Column(
+                children: [
+                  Expanded(child: _form(context)),
+                  if (!keyboard) ...[
+                    Divider(height: 1, color: divider),
+                    Expanded(child: week),
+                  ],
+                ],
               ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              children: [
-                for (var i = 0; i < eventColors.length; i++)
-                  Tooltip(
-                    message: eventColorNames[i],
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: () => setState(() => _color = i),
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: eventColors[i],
-                          shape: BoxShape.circle,
-                        ),
-                        child: _color == i
-                            ? const Icon(
-                                Icons.check,
-                                size: 18,
-                                color: Colors.white,
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _notes,
-              minLines: 3,
-              maxLines: 8,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                labelText: 'Notas',
-                alignLabelWithHint: true,
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -74,17 +74,24 @@ class _CalendarPageState extends State<CalendarPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('"${drag.event.title}"'),
-        content: Text('Mover ou copiar para ${fmtDayLong(target)}?'),
+        content: Text(
+          'Mover ou copiar para ${fmtDayLong(target)}?',
+          style: const TextStyle(fontSize: 17),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
           TextButton(
+            style: bigButton,
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancelar'),
           ),
           OutlinedButton(
+            style: bigButton,
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Copiar'),
           ),
           FilledButton(
+            style: bigButton,
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Mover'),
           ),
@@ -168,7 +175,7 @@ class _CalendarPageState extends State<CalendarPage> {
             .length;
         if (n > most) most = n;
       }
-      final needed = _cellChrome + most * _EventChip.extent;
+      final needed = _cellChrome + most * EventChipBox.extent;
       return needed > minRowHeight ? needed : minRowHeight;
     }
 
@@ -380,8 +387,6 @@ class _EventChip extends StatelessWidget {
     this.faded = false,
   });
 
-  /// Altura ocupada por cada evento na célula (20 + margens).
-  static const extent = 22.0;
   final bool compact;
 
   final Event event;
@@ -389,41 +394,9 @@ class _EventChip extends StatelessWidget {
   final VoidCallback onTap;
   final bool faded;
 
-  Widget _chip(BuildContext context, {required bool compact}) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = eventColor(event.color);
-    // Dia inteiro: bloco cheio. Com hora: fundo suave e barra de cor.
-    final solid = event.allDay;
-    final showTime = !compact && !event.allDay && dateOnly(event.start) == day;
-    return Container(
-      height: 20,
-      margin: const EdgeInsets.fromLTRB(2, 1, 2, 1),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      alignment: Alignment.centerLeft,
-      decoration: BoxDecoration(
-        color: solid ? color : color.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(4),
-        border: solid ? null : Border(left: BorderSide(color: color, width: 3)),
-      ),
-      child: Text(
-        showTime ? '${fmtTime(event.start)} ${event.title}' : event.title,
-        maxLines: 1,
-        softWrap: false,
-        overflow: TextOverflow.clip,
-        style: TextStyle(
-          fontSize: compact ? 10 : 12,
-          height: 1.1,
-          color: solid ? Colors.white : scheme.onSurface,
-          decoration: TextDecoration.none,
-          fontWeight: FontWeight.w400,
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final chip = _chip(context, compact: compact);
+    final chip = EventChipBox(event: event, day: day, compact: compact);
     final child = GestureDetector(
       onTap: onTap,
       child: Opacity(opacity: faded ? 0.55 : 1, child: chip),
@@ -431,7 +404,10 @@ class _EventChip extends StatelessWidget {
     final feedback = Material(
       color: Colors.transparent,
       elevation: 4,
-      child: SizedBox(width: 170, child: _chip(context, compact: false)),
+      child: SizedBox(
+        width: 170,
+        child: EventChipBox(event: event, day: day, compact: false),
+      ),
     );
     final _Drag data = (event: event, day: day);
     // Em ecrãs táteis o arrasto começa com toque longo, para não interferir

@@ -86,10 +86,10 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(Icons.event_available, size: 56, color: scheme.primary),
+                  Image.asset('assets/logo.png', height: 96),
                   const SizedBox(height: 12),
                   Text(
-                    'Agenda',
+                    'WolfCal',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineMedium,
                   ),
