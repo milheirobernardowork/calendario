@@ -435,9 +435,11 @@ class _CalendarPageState extends State<CalendarPage> {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           // Espaço em branco: seleciona o dia e começa um evento novo nele.
-          onTap: () {
-            _select(day);
-            openEventEditor(context, widget.store, day: day);
+          onTap: () async {
+            // O editor abre primeiro; o dia só fica selecionado depois, para
+            // não redesenhar o calendário inteiro no mesmo instante.
+            await openEventEditor(context, widget.store, day: day);
+            if (mounted) _select(day);
           },
           child: Container(
             decoration: BoxDecoration(
@@ -671,9 +673,9 @@ class _CalendarPageState extends State<CalendarPage> {
   @override
   Widget build(BuildContext context) {
     final divider = Theme.of(context).colorScheme.outlineVariant;
-    return ListenableBuilder(
+    return StoreListener(
       listenable: widget.store,
-      builder: (context, _) => Listener(
+      builder: (context) => Listener(
         onPointerSignal: _onWheel,
         child: LayoutBuilder(
           builder: (context, box) {

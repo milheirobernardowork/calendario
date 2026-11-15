@@ -167,3 +167,74 @@ Future<bool> confirmDelete(BuildContext context, String what) async {
   );
   return ok == true;
 }
+
+/// Abre um ecrã com uma transição curta (aparece logo ao clicar).
+Route<T> fastRoute<T>(WidgetBuilder builder) => PageRouteBuilder<T>(
+  transitionDuration: const Duration(milliseconds: 120),
+  reverseTransitionDuration: const Duration(milliseconds: 100),
+  pageBuilder: (context, _, _) => builder(context),
+  transitionsBuilder: (context, animation, _, child) =>
+      FadeTransition(opacity: animation, child: child),
+);
+
+/// Como [ListenableBuilder], mas não redesenha enquanto a página está
+/// escondida (separador não visível, ou por baixo de outro ecrã). Quando
+/// volta a aparecer, redesenha uma vez se algo mudou entretanto.
+class StoreListener extends StatefulWidget {
+  const StoreListener({
+    super.key,
+    required this.listenable,
+    required this.builder,
+  });
+
+  final Listenable listenable;
+  final WidgetBuilder builder;
+
+  @override
+  State<StoreListener> createState() => _StoreListenerState();
+}
+
+class _StoreListenerState extends State<StoreListener> {
+  bool _stale = false;
+  bool _visible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.listenable.addListener(_changed);
+  }
+
+  @override
+  void didUpdateWidget(StoreListener old) {
+    super.didUpdateWidget(old);
+    if (old.listenable != widget.listenable) {
+      old.listenable.removeListener(_changed);
+      widget.listenable.addListener(_changed);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _visible = TickerMode.valuesOf(context).enabled;
+    if (_visible && _stale) _stale = false; // o build seguinte já atualiza
+  }
+
+  @override
+  void dispose() {
+    widget.listenable.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (!mounted) return;
+    if (_visible) {
+      setState(() {});
+    } else {
+      _stale = true;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context);
+}

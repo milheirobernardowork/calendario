@@ -15,9 +15,8 @@ Future<void> openEventEditor(
   String? category,
 }) {
   return Navigator.of(context).push(
-    MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (_) => EventEditScreen(
+    fastRoute(
+      (_) => EventEditScreen(
         store: store,
         event: event,
         day: day,

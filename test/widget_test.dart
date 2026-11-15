@@ -11,7 +11,24 @@ class FakeRemote implements Remote {
   @override
   Future<List<Map<String, dynamic>>> fetchAll(String table) async {
     if (offline) throw Exception('offline');
+    fullFetches++;
     return (tables[table] ?? {}).values.map((r) => {...r}).toList();
+  }
+
+  int fullFetches = 0;
+  int partialFetches = 0;
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchSince(
+    String table,
+    DateTime since,
+  ) async {
+    if (offline) throw Exception('offline');
+    partialFetches++;
+    return (tables[table] ?? {}).values
+        .where((r) => DateTime.parse(r['updated_at'] as String).isAfter(since))
+        .map((r) => {...r})
+        .toList();
   }
 
   @override
@@ -43,11 +60,7 @@ Future<Store> device(Remote? remote) async {
 }
 
 /// Espera que as sincronizações em curso terminem.
-Future<void> settle(Store s) async {
-  for (var i = 0; i < 50 && s.status == SyncStatus.syncing; i++) {
-    await Future<void>.delayed(const Duration(milliseconds: 5));
-  }
-}
+Future<void> settle(Store s) => s.whenIdle();
 
 Task task(String title) =>
     Task(id: newId(), title: title, updatedAt: DateTime.now().toUtc());
@@ -56,6 +69,7 @@ void main() {
   dragTests();
   recurrenceTests();
   taskFlagTests();
+  syncEfficiencyTests();
   test('alterações propagam-se entre dispositivos', () async {
     final server = FakeRemote();
     final pc = await device(server);
@@ -152,7 +166,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final a = Store(prefs)..saveTask(task('Persistente'));
-    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await a.flush();
     expect(a.tasks, hasLength(1));
     final b = Store(prefs);
     expect(b.tasks.single.title, 'Persistente');
@@ -351,5 +365,36 @@ void taskFlagTests() {
     expect(p.active, isFalse);
     expect(p.createdAt, created);
     expect(p.due, isNull);
+  });
+}
+
+void syncEfficiencyTests() {
+  test('depois da primeira, a sincronização só pede o que mudou', () async {
+    final server = FakeRemote();
+    final pc = await device(server);
+    final phone = await device(server);
+    final fullBefore = server.fullFetches;
+    pc.saveTask(task('Nova'));
+    await settle(pc);
+    await phone.sync();
+    expect(phone.tasks.single.title, 'Nova');
+    expect(server.fullFetches, fullBefore); // nada de descarregar tudo
+    expect(server.partialFetches, greaterThan(0));
+    // Forçar uma sincronização completa continua a funcionar.
+    await phone.sync(full: true);
+    expect(server.fullFetches, greaterThan(fullBefore));
+  });
+
+  test('várias alterações seguidas dão um só envio', () async {
+    final server = FakeRemote();
+    final pc = await device(server);
+    final before = server.partialFetches + server.fullFetches;
+    for (var i = 0; i < 5; i++) {
+      pc.saveTask(task('T$i'));
+    }
+    await settle(pc);
+    // Uma sincronização = 3 tabelas.
+    expect(server.partialFetches + server.fullFetches - before, 3);
+    expect(server.tables['tasks'], hasLength(5));
   });
 }

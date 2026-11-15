@@ -25,6 +25,24 @@ class SupabaseRemote implements Remote {
   }
 
   @override
+  Future<List<Map<String, dynamic>>> fetchSince(
+    String table,
+    DateTime since,
+  ) async {
+    final all = <Map<String, dynamic>>[];
+    for (var from = 0; ; from += _page) {
+      final rows = await client
+          .from(table)
+          .select()
+          .gt('updated_at', since.toUtc().toIso8601String())
+          .order('id')
+          .range(from, from + _page - 1);
+      all.addAll(rows);
+      if (rows.length < _page) return all;
+    }
+  }
+
+  @override
   Future<void> upsert(String table, List<Map<String, dynamic>> rows) async {
     final uid = client.auth.currentUser!.id;
     await client.from(table).upsert([

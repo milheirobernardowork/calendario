@@ -11,12 +11,9 @@ Future<void> openTaskEditor(
   Task? task,
   DateTime? due,
 }) {
-  return Navigator.of(context).push(
-    MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (_) => TaskEditScreen(store: store, task: task, due: due),
-    ),
-  );
+  return Navigator.of(
+    context,
+  ).push(fastRoute((_) => TaskEditScreen(store: store, task: task, due: due)));
 }
 
 class TaskEditScreen extends StatefulWidget {

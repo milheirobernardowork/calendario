@@ -84,9 +84,9 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   Widget _list(BuildContext context) {
-    return ListenableBuilder(
+    return StoreListener(
       listenable: widget.store,
-      builder: (context, _) {
+      builder: (context) {
         final today = dateOnly(DateTime.now());
         final all = widget.store.tasks;
         final open = all.where((t) => !t.done).toList()..sort(_order);

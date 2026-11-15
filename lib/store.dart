@@ -10,6 +10,9 @@ import 'models.dart';
 abstract class Remote {
   /// Todas as linhas do utilizador (incluindo as eliminadas logicamente).
   Future<List<Map<String, dynamic>>> fetchAll(String table);
+
+  /// Só as linhas alteradas depois de [since].
+  Future<List<Map<String, dynamic>>> fetchSince(String table, DateTime since);
   Future<void> upsert(String table, List<Map<String, dynamic>> rows);
 
   /// Remove definitivamente linhas eliminadas antes de [before].
@@ -39,10 +42,30 @@ class Store extends ChangeNotifier {
   Remote? _remote;
   bool _syncing = false;
   bool _syncAgain = false;
-  SyncStatus _status = SyncStatus.localOnly;
+  bool _fullAgain = false;
   String? lastError;
 
-  SyncStatus get status => _status;
+  /// Estado da sincronização. Separado dos dados, para que mudar o ícone
+  /// da nuvem não obrigue a redesenhar o calendário.
+  final syncStatus = ValueNotifier(SyncStatus.localOnly);
+
+  SyncStatus get status => syncStatus.value;
+  set _status(SyncStatus s) => syncStatus.value = s;
+
+  /// Até onde já se recebeu de cada tabela (para pedir só o que mudou).
+  final _cursor = <String, DateTime>{};
+  DateTime? _lastFullSync;
+
+  /// De quanto em quanto tempo se descarrega tudo (rede de segurança para
+  /// relógios desacertados e eliminações definitivas).
+  static const _fullSyncEvery = Duration(minutes: 15);
+
+  /// Margem para relógios de dispositivos ligeiramente desacertados.
+  static const _clockMargin = Duration(minutes: 10);
+
+  Timer? _syncTimer;
+  Timer? _persistTimer;
+  final _unsaved = <String>{};
 
   int get pendingChanges =>
       _events.values.where((e) => e.dirty).length +
@@ -52,15 +75,19 @@ class Store extends ChangeNotifier {
   /// Liga (ou desliga, com `null`) o servidor.
   set remote(Remote? r) {
     _remote = r;
+    _cursor.clear();
+    _lastFullSync = null;
     _status = r == null ? SyncStatus.localOnly : SyncStatus.syncing;
-    notifyListeners();
-    if (r != null) sync();
+    if (r != null) sync(full: true);
   }
 
   // ---------------------------------------------------------------- leitura
 
+  List<Event>? _eventsCache;
+
+  /// Todos os eventos, por data. Não alterar a lista devolvida.
   List<Event> get events =>
-      _events.values.where((e) => !e.isDeleted).toList()
+      _eventsCache ??= _events.values.where((e) => !e.isDeleted).toList()
         ..sort((a, b) => a.start.compareTo(b.start));
 
   /// Eventos por dia já calculados; esvaziado sempre que os dados mudam.
@@ -70,7 +97,40 @@ class Store extends ChangeNotifier {
   @override
   void notifyListeners() {
     _dayCache.clear();
+    _eventsCache = null;
     super.notifyListeners();
+  }
+
+  /// Espera que não haja nada por enviar nem a decorrer (testes; fechar).
+  Future<void> whenIdle() async {
+    while ((_syncTimer?.isActive ?? false) || _syncing) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
+
+  /// Grava já o que estiver por gravar (ex.: a app vai fechar).
+  Future<void> flush() async {
+    _persistTimer?.cancel();
+    await _persist();
+  }
+
+  String _keyOf(Map map) => identical(map, _events)
+      ? 'events'
+      : identical(map, _tasks)
+      ? 'tasks'
+      : 'categories';
+
+  void _persistSoon(Iterable<String> keys) {
+    _unsaved.addAll(keys);
+    _persistTimer?.cancel();
+    _persistTimer = Timer(const Duration(milliseconds: 150), _persist);
+  }
+
+  /// Várias alterações seguidas dão um só envio.
+  void _syncSoon() {
+    if (_remote == null) return;
+    _syncTimer?.cancel();
+    _syncTimer = Timer(const Duration(milliseconds: 300), sync);
   }
 
   /// Eventos que tocam no dia, ordenados. A lista devolvida não deve ser
@@ -223,9 +283,9 @@ class Store extends ChangeNotifier {
     if (delete) r.deletedAt = now;
     r.dirty = true;
     map[r.id] = r;
-    _persist();
+    _persistSoon([_keyOf(map)]);
     notifyListeners();
-    sync();
+    _syncSoon();
   }
 
   /// Apaga a cópia local (usado ao terminar sessão).
@@ -234,7 +294,8 @@ class Store extends ChangeNotifier {
     _tasks.clear();
     _categories.clear();
     _ensureCorridas();
-    await _persist();
+    _unsaved.addAll(['events', 'tasks', 'categories']);
+    await flush();
     notifyListeners();
   }
 
@@ -264,36 +325,62 @@ class Store extends ChangeNotifier {
   }
 
   Future<void> _persist() async {
-    await _prefs.setString(
-      'events',
-      jsonEncode(_events.values.map((e) => e.toLocal()).toList()),
-    );
-    await _prefs.setString(
-      'tasks',
-      jsonEncode(_tasks.values.map((t) => t.toLocal()).toList()),
-    );
-    await _prefs.setString(
-      'categories',
-      jsonEncode(_categories.values.map((c) => c.toLocal()).toList()),
-    );
+    final keys = {..._unsaved};
+    _unsaved.clear();
+    if (keys.contains('events')) {
+      await _prefs.setString(
+        'events',
+        jsonEncode(_events.values.map((e) => e.toLocal()).toList()),
+      );
+    }
+    if (keys.contains('tasks')) {
+      await _prefs.setString(
+        'tasks',
+        jsonEncode(_tasks.values.map((t) => t.toLocal()).toList()),
+      );
+    }
+    if (keys.contains('categories')) {
+      await _prefs.setString(
+        'categories',
+        jsonEncode(_categories.values.map((c) => c.toLocal()).toList()),
+      );
+    }
   }
 
   // ---------------------------------------------------------- sincronização
 
-  Future<void> sync() async {
+  /// Sincroniza com o servidor. Normalmente só pede o que mudou desde a
+  /// última vez; com [full] (ou de 15 em 15 minutos) descarrega tudo.
+  Future<void> sync({bool full = false}) async {
+    _syncTimer?.cancel();
     final remote = _remote;
     if (remote == null) return;
     if (_syncing) {
       _syncAgain = true;
+      _fullAgain |= full;
       return;
     }
+    final last = _lastFullSync;
+    full |= last == null || DateTime.now().difference(last) > _fullSyncEvery;
     _syncing = true;
-    _status = SyncStatus.syncing;
-    notifyListeners();
+    if (status != SyncStatus.synced) _status = SyncStatus.syncing;
+    var changed = <String>{};
     try {
-      await _syncTable(remote, 'events', _events, Event.fromJson);
-      await _syncTable(remote, 'tasks', _tasks, Task.fromJson);
-      await _syncTable(remote, 'categories', _categories, EventColumn.fromJson);
+      changed = {
+        if (await _syncTable(remote, 'events', _events, Event.fromJson, full))
+          'events',
+        if (await _syncTable(remote, 'tasks', _tasks, Task.fromJson, full))
+          'tasks',
+        if (await _syncTable(
+          remote,
+          'categories',
+          _categories,
+          EventColumn.fromJson,
+          full,
+        ))
+          'categories',
+      };
+      if (full) _lastFullSync = DateTime.now();
       lastError = null;
       if (_remote == remote) _status = SyncStatus.synced;
     } catch (e) {
@@ -301,35 +388,61 @@ class Store extends ChangeNotifier {
       if (_remote == remote) _status = SyncStatus.error;
     } finally {
       _syncing = false;
-      await _persist();
-      notifyListeners();
+      if (changed.isNotEmpty) {
+        // Só se redesenha e grava quando algo mudou de facto.
+        _persistSoon(changed);
+        notifyListeners();
+      }
       if (_syncAgain) {
+        final again = _fullAgain;
         _syncAgain = false;
-        unawaited(sync());
+        _fullAgain = false;
+        unawaited(sync(full: again));
       }
     }
   }
 
-  Future<void> _syncTable<T extends Record>(
+  /// Devolve `true` se os dados locais mudaram.
+  Future<bool> _syncTable<T extends Record>(
     Remote remote,
     String table,
     Map<String, T> local,
     T Function(Map<String, dynamic>) parse,
+    bool full,
   ) async {
-    // 1. Descarregar e fundir.
-    final rows = await remote.fetchAll(table);
-    if (_remote != remote) return; // sessão terminada entretanto
+    var changed = false;
+    // 1. Descarregar (tudo, ou só o que mudou) e fundir.
+    final since = _cursor[table];
+    final rows = full || since == null
+        ? await remote.fetchAll(table)
+        : await remote.fetchSince(table, since.subtract(_clockMargin));
+    if (_remote != remote) return false; // sessão terminada entretanto
     final seen = <String>{};
+    var newest = since;
     for (final row in rows) {
       final r = parse(row)..dirty = false;
       seen.add(r.id);
+      if (newest == null || r.updatedAt.isAfter(newest)) newest = r.updatedAt;
       final mine = local[r.id];
       if (mine == null || !mine.dirty || r.updatedAt.isAfter(mine.updatedAt)) {
+        if (mine == null ||
+            mine.dirty ||
+            mine.updatedAt != r.updatedAt ||
+            mine.isDeleted != r.isDeleted) {
+          changed = true;
+        }
         local[r.id] = r;
       }
     }
-    // O que já não existe no servidor (e não tem alterações locais) sai.
-    local.removeWhere((id, r) => !r.dirty && !seen.contains(id));
+    // Tabela vazia: a partir de agora basta pedir o que for novo.
+    newest ??= full ? DateTime.now().toUtc() : null;
+    if (newest != null) _cursor[table] = newest;
+    if (full) {
+      // O que já não existe no servidor (e não tem alterações locais) sai.
+      final before = local.length;
+      local.removeWhere((id, r) => !r.dirty && !seen.contains(id));
+      if (local.length != before) changed = true;
+    }
 
     // 2. Enviar alterações locais.
     final pending = local.values.where((r) => r.dirty).toList();
@@ -340,6 +453,8 @@ class Store extends ChangeNotifier {
         // Só fica limpo se não voltou a ser alterado durante o envio.
         if (local[r.id]?.updatedAt == sent[r.id]) r.dirty = false;
       }
+      // O estado "por enviar" também é gravado localmente.
+      _persistSoon([table]);
     }
 
     // 3. Limpeza de eliminados antigos.
@@ -350,5 +465,6 @@ class Store extends ChangeNotifier {
         (_, r) => !r.dirty && r.isDeleted && r.deletedAt!.isBefore(cutoff),
       );
     }
+    return changed;
   }
 }

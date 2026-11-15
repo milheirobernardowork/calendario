@@ -23,9 +23,9 @@ class EventsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
+    return StoreListener(
       listenable: store,
-      builder: (context, _) {
+      builder: (context) {
         final columns = store.categories;
         final today = dateOnly(DateTime.now());
         return LayoutBuilder(

@@ -47,6 +47,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Ao voltar à app, ir buscar o que mudou nos outros dispositivos.
     if (state == AppLifecycleState.resumed) store.sync();
+    // A app vai para segundo plano ou fechar: gravar já o que falta.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      store.flush();
+    }
   }
 
   /// Quantas vezes se entrou em Tarefas (a timeline volta a centrar hoje).
@@ -104,15 +110,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final wide = MediaQuery.sizeOf(context).width >= 720;
     final body = IndexedStack(
       index: _tab,
-      children: [
-        CalendarPage(
-          store: store,
-          selectedDay: _selectedDay,
-          onDaySelected: (d) => setState(() => _selectedDay = d),
-        ),
-        TasksPage(store: store, visit: _taskVisits),
-        EventsPage(store: store),
-      ],
+      children:
+          [
+            CalendarPage(
+              store: store,
+              selectedDay: _selectedDay,
+              onDaySelected: (d) => setState(() => _selectedDay = d),
+            ),
+            TasksPage(store: store, visit: _taskVisits),
+            EventsPage(store: store),
+          ].indexed.map((p) {
+            // As páginas escondidas não se redesenham a cada alteração.
+            return TickerMode(enabled: p.$1 == _tab, child: p.$2);
+          }).toList(),
     );
 
     return Scaffold(
@@ -120,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         title: Text(const ['Calendário', 'Tarefas', 'Eventos'][_tab]),
         actions: [
           ListenableBuilder(
-            listenable: store,
+            listenable: Listenable.merge([store, store.syncStatus]),
             builder: (context, _) => _SyncIndicator(store: store),
           ),
           if (widget.onSignOut != null)

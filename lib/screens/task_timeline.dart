@@ -106,9 +106,9 @@ class _TaskTimelineState extends State<TaskTimeline> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListenableBuilder(
+    return StoreListener(
       listenable: widget.store,
-      builder: (context, _) {
+      builder: (context) {
         final byDay = <DateTime, List<Task>>{};
         for (final t in widget.store.tasks) {
           if (t.due != null) (byDay[t.due!] ??= []).add(t);
