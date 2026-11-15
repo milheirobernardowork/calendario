@@ -157,6 +157,95 @@ class _CalendarPageState extends State<CalendarPage> {
     widget.store.shiftEvent(drag.event, days, copy: copy, from: drag.day);
   }
 
+  /// Vai para o mês [month] do ano [year] (dia 1).
+  void _jumpTo(int year, int month) =>
+      setState(() => _focused = DateTime(year, month));
+
+  static const _monthNames = [
+    'janeiro',
+    'fevereiro',
+    'março',
+    'abril',
+    'maio',
+    'junho',
+    'julho',
+    'agosto',
+    'setembro',
+    'outubro',
+    'novembro',
+    'dezembro',
+  ];
+
+  Widget _monthButton(BuildContext context) {
+    return PopupMenuButton<int>(
+      tooltip: 'Escolher o mês',
+      initialValue: _focused.month,
+      onSelected: (m) => _jumpTo(_focused.year, m),
+      itemBuilder: (context) => [
+        for (var m = 1; m <= 12; m++)
+          PopupMenuItem(value: m, height: 40, child: Text(_monthNames[m - 1])),
+      ],
+      child: _dropLabel(context, _monthNames[_focused.month - 1]),
+    );
+  }
+
+  Widget _yearButton(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () async {
+        final year = await showDialog<int>(
+          context: context,
+          builder: (dialog) => AlertDialog(
+            title: const Text('Escolher o ano'),
+            contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
+            content: SizedBox(
+              width: 320,
+              height: 360,
+              child: YearPicker(
+                firstDate: DateTime(2000),
+                lastDate: DateTime(2100),
+                selectedDate: _focused,
+                onChanged: (d) => Navigator.pop(dialog, d.year),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialog),
+                child: const Text('Cancelar'),
+              ),
+            ],
+          ),
+        );
+        if (year != null) _jumpTo(year, _focused.month);
+      },
+      child: Tooltip(
+        message: 'Escolher o ano',
+        child: _dropLabel(context, '${_focused.year}'),
+      ),
+    );
+  }
+
+  /// Texto com uma seta para baixo, como uma lista de escolha.
+  Widget _dropLabel(BuildContext context, String text) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          text,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        Icon(
+          Icons.arrow_drop_down,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      ],
+    ),
+  );
+
   Widget _header(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 8, 0),
@@ -174,16 +263,21 @@ class _CalendarPageState extends State<CalendarPage> {
           ),
           const SizedBox(width: 4),
           Expanded(
-            child: Text(
-              _title,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            // Em ecrãs estreitos os botões de mês e ano já dizem onde se está.
+            child: MediaQuery.sizeOf(context).width < 600
+                ? const SizedBox.shrink()
+                : Text(
+                    _title,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
           ),
           TextButton(
             onPressed: () => _select(dateOnly(DateTime.now())),
             child: const Text('Hoje'),
           ),
+          _monthButton(context),
+          _yearButton(context),
           IconButton(
             tooltip: _weekView ? 'Ver mês' : 'Ver semana',
             icon: Icon(
