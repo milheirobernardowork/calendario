@@ -44,8 +44,6 @@ flutter build apk --release
 
 ### Sem instalar nada
 
-- **Versão web**: o workflow `pages` publica-a em
-  `https://<utilizador>.github.io/<repositório>/` a cada alteração.
 - **Instalador de Windows e APK**: em Actions → `build` → Run workflow. No fim
   é criada uma Release com `WolfCal-Setup.exe` e `WolfCal.apk`. Correr um
   instalador mais recente atualiza a versão instalada, mantendo os dados.
