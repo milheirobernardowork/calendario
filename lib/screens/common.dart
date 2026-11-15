@@ -15,7 +15,7 @@ const eventColors = <Color>[
   Color(0xFF5C6B7A), // cinzento
   // Acrescentar sempre no fim: o índice é o que fica gravado no evento.
   Color(0xFF6EC6F5), // azul claro
-  Color(0xFFEDBE9C), // cor de pele
+  Color(0xFFF0B2AA), // cor de pele (rosada)
   Color(0xFF0B8043), // verde escuro
   Color(0xFF7986CB), // lilás
 ];
