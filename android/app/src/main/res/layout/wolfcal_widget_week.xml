@@ -12,7 +12,7 @@
         android:paddingStart="4dp"
         android:paddingTop="8dp"
         android:paddingBottom="2dp"
-        android:textColor="#1B2230"
+        android:textColor="#E6E8EF"
         android:textSize="13sp"
         android:textStyle="bold"
         android:visibility="gone"/>
@@ -37,7 +37,7 @@
                 android:layout_height="20dp"
                 android:layout_gravity="center_horizontal"
                 android:gravity="center"
-                android:textColor="#1B2230"
+                android:textColor="#E6E8EF"
                 android:textSize="11sp"/>
             <LinearLayout
                 android:id="@+id/ev0"
@@ -58,7 +58,7 @@
                 android:layout_height="20dp"
                 android:layout_gravity="center_horizontal"
                 android:gravity="center"
-                android:textColor="#1B2230"
+                android:textColor="#E6E8EF"
                 android:textSize="11sp"/>
             <LinearLayout
                 android:id="@+id/ev1"
@@ -79,7 +79,7 @@
                 android:layout_height="20dp"
                 android:layout_gravity="center_horizontal"
                 android:gravity="center"
-                android:textColor="#1B2230"
+                android:textColor="#E6E8EF"
                 android:textSize="11sp"/>
             <LinearLayout
                 android:id="@+id/ev2"
@@ -100,7 +100,7 @@
                 android:layout_height="20dp"
                 android:layout_gravity="center_horizontal"
                 android:gravity="center"
-                android:textColor="#1B2230"
+                android:textColor="#E6E8EF"
                 android:textSize="11sp"/>
             <LinearLayout
                 android:id="@+id/ev3"
@@ -121,7 +121,7 @@
                 android:layout_height="20dp"
                 android:layout_gravity="center_horizontal"
                 android:gravity="center"
-                android:textColor="#1B2230"
+                android:textColor="#E6E8EF"
                 android:textSize="11sp"/>
             <LinearLayout
                 android:id="@+id/ev4"
@@ -142,7 +142,7 @@
                 android:layout_height="20dp"
                 android:layout_gravity="center_horizontal"
                 android:gravity="center"
-                android:textColor="#1B2230"
+                android:textColor="#E6E8EF"
                 android:textSize="11sp"/>
             <LinearLayout
                 android:id="@+id/ev5"
@@ -163,7 +163,7 @@
                 android:layout_height="20dp"
                 android:layout_gravity="center_horizontal"
                 android:gravity="center"
-                android:textColor="#1B2230"
+                android:textColor="#E6E8EF"
                 android:textSize="11sp"/>
             <LinearLayout
                 android:id="@+id/ev6"

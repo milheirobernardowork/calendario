@@ -43,7 +43,7 @@ class WeeksFactory(private val context: Context) : RemoteViewsService.RemoteView
 
             val isToday = epochDay == today
             row.setTextViewText(numbers[i], dayOfMonth.toString())
-            row.setTextColor(numbers[i], if (isToday) Color.WHITE else 0xFF1B2230.toInt())
+            row.setTextColor(numbers[i], if (isToday) Color.WHITE else 0xFFE6E8EF.toInt())
             row.setInt(
                 numbers[i], "setBackgroundResource",
                 if (isToday) R.drawable.wolfcal_today else 0,
@@ -65,7 +65,7 @@ class WeeksFactory(private val context: Context) : RemoteViewsService.RemoteView
                 val more = RemoteViews(context.packageName, R.layout.wolfcal_widget_event)
                 more.setTextViewText(R.id.event, "+" + (count - shown))
                 more.setInt(R.id.event, "setBackgroundColor", Color.TRANSPARENT)
-                more.setTextColor(R.id.event, 0xFF5C6B7A.toInt())
+                more.setTextColor(R.id.event, 0xFF9AA3B2.toInt())
                 row.addView(columns[i], more)
             }
         }

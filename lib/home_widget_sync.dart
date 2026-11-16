@@ -56,7 +56,7 @@ class HomeWidgetSync {
             for (final e in store.eventsOn(
               DateTime(first.year, first.month, first.day + i),
             ))
-              _event(e, DateTime(first.year, first.month, first.day + i)),
+              _event(e),
           ],
       ];
       await prefs.setString(
@@ -70,13 +70,9 @@ class HomeWidgetSync {
   }
 
   /// [texto, cor de fundo, cor do texto] (cores em ARGB).
-  static List<Object> _event(Event e, DateTime day) {
-    final timed = !e.allDay && e.startsOn(day);
-    final label = timed
-        ? '${e.start.hour.toString().padLeft(2, '0')}:'
-              '${e.start.minute.toString().padLeft(2, '0')} ${e.title}'
-        : e.title;
+  static List<Object> _event(Event e) {
+    // No widget só o nome (sem horas), para caber mais.
     final color = eventColor(e.color);
-    return [label, color.toARGB32(), onColor(color).toARGB32()];
+    return [e.title, color.toARGB32(), onColor(color).toARGB32()];
   }
 }
