@@ -111,7 +111,7 @@ class EventChipBox extends StatelessWidget {
         color: color,
         borderRadius: BorderRadius.circular(4),
       ),
-      padding: EdgeInsets.symmetric(horizontal: compact ? 4 : 6),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 3 : 6),
       alignment: Alignment.centerLeft,
       child: Text(
         showTime ? '${fmtTime(event.start)} ${event.title}' : event.title,
@@ -120,7 +120,9 @@ class EventChipBox extends StatelessWidget {
         overflow: TextOverflow.clip,
         textScaler: TextScaler.noScaling,
         style: TextStyle(
-          fontSize: compact ? 10.5 : 13,
+          // No telemóvel, letra mais pequena para caber mais do nome.
+          fontSize: compact ? 9.5 : 13,
+          letterSpacing: compact ? -0.2 : null,
           height: 1.1,
           color: onColor(color),
           decoration: TextDecoration.none,

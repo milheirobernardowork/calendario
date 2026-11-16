@@ -1,6 +1,8 @@
 // O pacote table_calendar e o flutter_localizations ainda assentam em
 // package:flutter/material.dart, por isso usa-se o mesmo em toda a app.
 // ignore_for_file: deprecated_member_use
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -8,7 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config.dart';
+import 'home_widget_sync.dart';
 import 'localizations.dart';
+import 'reminders.dart';
 import 'screens/home.dart';
 import 'screens/login.dart';
 import 'store.dart';
@@ -19,7 +23,8 @@ const appLocale = 'pt_PT';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting(appLocale);
-  final store = Store(await SharedPreferences.getInstance());
+  final prefs = await SharedPreferences.getInstance();
+  final store = Store(prefs);
 
   SupabaseClient? client;
   if (supabaseConfigured) {
@@ -28,6 +33,9 @@ Future<void> main() async {
     SupabaseSync(client, store);
   }
   runApp(AgendaApp(store: store, client: client));
+  // Depois de a app aparecer, para não atrasar o arranque.
+  unawaited(Reminders(store).init());
+  HomeWidgetSync(store, prefs).init();
 }
 
 class AgendaApp extends StatelessWidget {

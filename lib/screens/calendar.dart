@@ -2,6 +2,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../holidays.dart';
 import '../models.dart';
@@ -59,6 +60,48 @@ class _CalendarPageState extends State<CalendarPage> {
   bool _weekView = false;
 
   final _gridScroll = ScrollController();
+
+  // --- Teclado (desktop) ----------------------------------------------
+
+  /// Evento debaixo do rato: é o que a tecla Del apaga.
+  ({Event event, DateTime day})? _hovered;
+  final _keysFocus = FocusNode(debugLabel: 'calendário');
+
+  void _hover(Event e, DateTime day, bool on) {
+    if (on) {
+      _hovered = (event: e, day: day);
+    } else if (_hovered?.event.id == e.id) {
+      _hovered = null;
+    }
+  }
+
+  /// Atalhos: N novo evento, T hoje, ← → mês anterior/seguinte, Del apagar
+  /// o evento debaixo do rato. Só com o calendário à vista.
+  Map<ShortcutActivator, VoidCallback> get _shortcuts {
+    void Function() when(void Function() f) => () {
+      if (TickerMode.valuesOf(context).enabled) f();
+    };
+    return {
+      const SingleActivator(LogicalKeyboardKey.keyN): when(
+        () => openEventEditor(context, widget.store, day: widget.selectedDay),
+      ),
+      const SingleActivator(LogicalKeyboardKey.keyT): when(
+        () => _select(dateOnly(DateTime.now())),
+      ),
+      const SingleActivator(LogicalKeyboardKey.arrowLeft): when(
+        () => _step(-1),
+      ),
+      const SingleActivator(LogicalKeyboardKey.arrowRight): when(
+        () => _step(1),
+      ),
+      const SingleActivator(LogicalKeyboardKey.delete): when(() {
+        final h = _hovered;
+        if (h == null) return;
+        _hovered = null;
+        deleteWithUndo(context, widget.store, h.event, h.day);
+      }),
+    };
+  }
 
   // --- Telemóvel: semanas seguidas, a começar na semana atual. ---------
 
@@ -237,6 +280,7 @@ class _CalendarPageState extends State<CalendarPage> {
   void dispose() {
     _gridScroll.dispose();
     _phoneScroll.dispose();
+    _keysFocus.dispose();
     super.dispose();
   }
 
@@ -667,12 +711,15 @@ class _CalendarPageState extends State<CalendarPage> {
                   event: b.event,
                   day: layout.days[b.from],
                   compact: compact && b.from == b.to,
-                  onTap: () => openEventEditor(
-                    context,
-                    widget.store,
-                    event: b.event,
-                    day: layout.days[b.from],
-                  ),
+                  onHover: (on) => _hover(b.event, layout.days[b.from], on),
+                  onTap: () => _continuous
+                      ? _showDay(layout.days[b.from])
+                      : openEventEditor(
+                          context,
+                          widget.store,
+                          event: b.event,
+                          day: layout.days[b.from],
+                        ),
                 ),
               ),
         ],
@@ -714,6 +761,11 @@ class _CalendarPageState extends State<CalendarPage> {
           behavior: HitTestBehavior.opaque,
           // Espaço em branco: seleciona o dia e começa um evento novo nele.
           onTap: () async {
+            // No telemóvel, tocar num dia mostra os eventos desse dia.
+            if (_continuous) {
+              _showDay(day);
+              return;
+            }
             // O editor abre primeiro; o dia só fica selecionado depois, para
             // não redesenhar o calendário inteiro no mesmo instante.
             await openEventEditor(context, widget.store, day: day);
@@ -775,12 +827,15 @@ class _CalendarPageState extends State<CalendarPage> {
                     day: day,
                     compact: compact,
                     faded: outside,
-                    onTap: () => openEventEditor(
-                      context,
-                      widget.store,
-                      event: e,
-                      day: day,
-                    ),
+                    onHover: (on) => _hover(e, day, on),
+                    onTap: () => _continuous
+                        ? _showDay(day)
+                        : openEventEditor(
+                            context,
+                            widget.store,
+                            event: e,
+                            day: day,
+                          ),
                   ),
                 if (hidden > 0 && free > 0)
                   SizedBox(
@@ -836,6 +891,17 @@ class _CalendarPageState extends State<CalendarPage> {
             builder: (context, _) => ListView(
               shrinkWrap: true,
               children: [
+                if (widget.store.eventsOn(day).isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Sem eventos neste dia',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
+                    ),
+                  ),
                 for (final e in widget.store.eventsOn(day))
                   _EventTile(
                     event: e,
@@ -961,40 +1027,57 @@ class _CalendarPageState extends State<CalendarPage> {
             _continuous = box.maxWidth < 600;
             if (_continuous) return _phone(context, box.maxWidth);
             if (box.maxWidth >= 840) {
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: Column(
+              return CallbackShortcuts(
+                bindings: _shortcuts,
+                child: Focus(
+                  focusNode: _keysFocus,
+                  autofocus: true,
+                  // Clicar no calendário devolve-lhe o teclado.
+                  child: Listener(
+                    onPointerDown: (_) {
+                      if (!_keysFocus.hasFocus) _keysFocus.requestFocus();
+                    },
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _header(context),
-                        _weekdays(context),
                         Expanded(
-                          // As semanas enchem a altura disponível e, se houver
-                          // muitos eventos, crescem e a grelha passa a rolar.
-                          child: LayoutBuilder(
-                            builder: (context, area) => SingleChildScrollView(
-                              controller: _gridScroll,
-                              child: _grid(
-                                context,
-                                area.maxWidth,
-                                fill: area.maxHeight,
+                          child: Column(
+                            children: [
+                              _header(context),
+                              _weekdays(context),
+                              Expanded(
+                                // As semanas enchem a altura disponível e, se houver
+                                // muitos eventos, crescem e a grelha passa a rolar.
+                                child: LayoutBuilder(
+                                  builder: (context, area) =>
+                                      SingleChildScrollView(
+                                        controller: _gridScroll,
+                                        child: _grid(
+                                          context,
+                                          area.maxWidth,
+                                          fill: area.maxHeight,
+                                        ),
+                                      ),
+                                ),
                               ),
-                            ),
+                            ],
+                          ),
+                        ),
+                        VerticalDivider(width: 1, color: divider),
+                        SizedBox(
+                          width: 250,
+                          child: ListView(
+                            padding: const EdgeInsets.only(bottom: 88),
+                            children: [
+                              _dayHeader(context),
+                              ..._dayTasks(context),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  VerticalDivider(width: 1, color: divider),
-                  SizedBox(
-                    width: 250,
-                    child: ListView(
-                      padding: const EdgeInsets.only(bottom: 88),
-                      children: [_dayHeader(context), ..._dayTasks(context)],
-                    ),
-                  ),
-                ],
+                ),
               );
             }
             return Column(
@@ -1032,10 +1115,14 @@ class _EventChip extends StatelessWidget {
     required this.compact,
     required this.store,
     this.faded = false,
+    this.onHover,
   });
 
   final bool compact;
   final Store store;
+
+  /// O rato entrou (`true`) ou saiu (`false`) do evento.
+  final ValueChanged<bool>? onHover;
 
   final Event event;
   final DateTime day;
@@ -1054,6 +1141,19 @@ class _EventChip extends StatelessWidget {
       child: Opacity(opacity: faded ? 0.55 : 1, child: chip),
     );
     if (event.isHoliday) return child;
+    // Ao passar o rato: as notas (só se houver) e "selecionado" para o Del.
+    final notes = event.notes.trim();
+    final hoverable = MouseRegion(
+      onEnter: (_) => onHover?.call(true),
+      onExit: (_) => onHover?.call(false),
+      child: notes.isEmpty
+          ? child
+          : Tooltip(
+              message: notes,
+              waitDuration: const Duration(milliseconds: 400),
+              child: child,
+            ),
+    );
     final feedback = Material(
       color: Colors.transparent,
       elevation: 4,
@@ -1079,7 +1179,7 @@ class _EventChip extends StatelessWidget {
             data: data,
             feedback: feedback,
             childWhenDragging: Opacity(opacity: 0.35, child: chip),
-            child: child,
+            child: hoverable,
           );
   }
 }
@@ -1211,9 +1311,27 @@ Future<void> showEventMenu(
     await openEventEditor(context, store, event: event, day: day);
     return;
   }
+  deleteWithUndo(
+    context,
+    store,
+    event,
+    day,
+    wholeSeries: choice == 'delete-series',
+  );
+}
+
+/// Apaga um evento (numa série, por omissão só o dia [day]) e mostra
+/// "Anular" durante uns segundos.
+void deleteWithUndo(
+  BuildContext context,
+  Store store,
+  Event event,
+  DateTime day, {
+  bool wholeSeries = false,
+}) {
   final before = event.recurrence;
   final occurrence = event.occurrenceStartOn(day) ?? dateOnly(day);
-  if (choice == 'delete' && series) {
+  if (event.recurrence != null && !wholeSeries) {
     store.excludeOccurrence(event, occurrence);
   } else {
     store.deleteEvent(event);

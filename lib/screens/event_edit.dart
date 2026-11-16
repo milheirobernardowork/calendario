@@ -496,7 +496,14 @@ class _EventEditScreenState extends State<EventEditScreen> {
                   message: eventColorNames[i],
                   child: InkWell(
                     customBorder: const CircleBorder(),
-                    onTap: () => setState(() => _color = i),
+                    onTap: () => setState(() {
+                      _color = i;
+                      // Roxo = aniversário: num evento novo, repete todos os anos.
+                      if (i == 4 && widget.event == null && !_repeat) {
+                        _repeat = true;
+                        _unit = 'year';
+                      }
+                    }),
                     child: Container(
                       width: 46,
                       height: 46,
