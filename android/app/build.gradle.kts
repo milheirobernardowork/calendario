@@ -17,7 +17,8 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.agenda.agenda"
-    compileSdk = flutter.compileSdkVersion
+    // O pacote das notificações exige o SDK 37 para compilar.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
