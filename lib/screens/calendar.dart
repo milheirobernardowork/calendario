@@ -103,6 +103,25 @@ class _CalendarPageState extends State<CalendarPage> {
     };
   }
 
+  /// Teclas de atalho. Só quando o próprio calendário tem o teclado: se
+  /// estiver a escrever-se num campo (ex.: nova tarefa), as letras são para
+  /// esse campo.
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (FocusManager.instance.primaryFocus != _keysFocus) {
+      return KeyEventResult.ignored;
+    }
+    for (final entry in _shortcuts.entries) {
+      if (entry.key.accepts(event, HardwareKeyboard.instance)) {
+        entry.value();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
   // --- Telemóvel: semanas seguidas, a começar na semana atual. ---------
 
   /// Ecrã estreito: calendário contínuo em vez de mês a mês.
@@ -1027,56 +1046,56 @@ class _CalendarPageState extends State<CalendarPage> {
             _continuous = box.maxWidth < 600;
             if (_continuous) return _phone(context, box.maxWidth);
             if (box.maxWidth >= 840) {
-              return CallbackShortcuts(
-                bindings: _shortcuts,
-                child: Focus(
-                  focusNode: _keysFocus,
-                  autofocus: true,
-                  // Clicar no calendário devolve-lhe o teclado.
-                  child: Listener(
-                    onPointerDown: (_) {
-                      if (!_keysFocus.hasFocus) _keysFocus.requestFocus();
-                    },
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            children: [
-                              _header(context),
-                              _weekdays(context),
-                              Expanded(
-                                // As semanas enchem a altura disponível e, se houver
-                                // muitos eventos, crescem e a grelha passa a rolar.
-                                child: LayoutBuilder(
-                                  builder: (context, area) =>
-                                      SingleChildScrollView(
-                                        controller: _gridScroll,
-                                        child: _grid(
-                                          context,
-                                          area.maxWidth,
-                                          fill: area.maxHeight,
-                                        ),
+              return Focus(
+                focusNode: _keysFocus,
+                autofocus: true,
+                onKeyEvent: _onKey,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      // Clicar no calendário (não no painel das tarefas)
+                      // devolve-lhe o teclado, tirando-o a um campo de texto
+                      // onde se estivesse a escrever.
+                      child: Listener(
+                        onPointerDown: (_) {
+                          if (!_keysFocus.hasPrimaryFocus) {
+                            _keysFocus.requestFocus();
+                          }
+                        },
+                        child: Column(
+                          children: [
+                            _header(context),
+                            _weekdays(context),
+                            Expanded(
+                              // As semanas enchem a altura disponível e, se
+                              // houver muitos eventos, crescem e a grelha
+                              // passa a rolar.
+                              child: LayoutBuilder(
+                                builder: (context, area) =>
+                                    SingleChildScrollView(
+                                      controller: _gridScroll,
+                                      child: _grid(
+                                        context,
+                                        area.maxWidth,
+                                        fill: area.maxHeight,
                                       ),
-                                ),
+                                    ),
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        VerticalDivider(width: 1, color: divider),
-                        SizedBox(
-                          width: 250,
-                          child: ListView(
-                            padding: const EdgeInsets.only(bottom: 88),
-                            children: [
-                              _dayHeader(context),
-                              ..._dayTasks(context),
-                            ],
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                    VerticalDivider(width: 1, color: divider),
+                    SizedBox(
+                      width: 250,
+                      child: ListView(
+                        padding: const EdgeInsets.only(bottom: 88),
+                        children: [_dayHeader(context), ..._dayTasks(context)],
+                      ),
+                    ),
+                  ],
                 ),
               );
             }

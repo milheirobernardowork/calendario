@@ -333,6 +333,8 @@ class _QuickAddTaskState extends State<QuickAddTask> {
       focusNode: _focus,
       textCapitalization: TextCapitalization.sentences,
       onSubmitted: (_) => _submit(),
+      // Quem tira o foco é o calendário, ao ser clicado (ver os atalhos).
+      onTapOutside: (_) {},
       style: const TextStyle(fontSize: 14),
       decoration: InputDecoration(
         hintText: widget.hint,
