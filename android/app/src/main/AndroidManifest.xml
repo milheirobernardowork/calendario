@@ -63,6 +63,22 @@
             android:name=".WolfCalWidgetService"
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS"/>
+        <!-- Widget das tarefas. -->
+        <receiver
+            android:name=".WolfCalTasksWidget"
+            android:exported="false"
+            android:label="WolfCal · Tarefas">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/wolfcal_tasks_widget_info"/>
+        </receiver>
+        <service
+            android:name=".WolfCalTasksWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS"/>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -78,6 +94,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Abrir a página de download de uma versão nova. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

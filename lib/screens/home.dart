@@ -4,6 +4,11 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../store.dart';
 import 'calendar.dart';
+
+import 'package:url_launcher/url_launcher.dart';
+
+import '../home_widget_sync.dart';
+import '../updates.dart';
 import 'event_edit.dart';
 import 'events_page.dart';
 import 'task_edit.dart';
@@ -35,11 +40,73 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    HomeWidgetSync.openTasks.addListener(_openTasks);
+    if (HomeWidgetSync.openTasks.value > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _goTab(1));
+    }
+    // Uns segundos depois de abrir, ver se há uma versão nova.
+    if (updatesSupported) {
+      installedVersion().then((v) {
+        if (mounted) setState(() => _version = v);
+      });
+      Future<void>.delayed(
+        const Duration(seconds: 5),
+        () => _checkUpdates(silent: true),
+      );
+    }
+  }
+
+  String? _version;
+
+  /// Procura uma versão nova no GitHub. Com [silent], só diz alguma coisa
+  /// se houver atualização.
+  Future<void> _checkUpdates({bool silent = false}) async {
+    final r = await checkForUpdate();
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (r.hasUpdate) {
+      messenger.hideCurrentMaterialBanner();
+      messenger.showMaterialBanner(
+        MaterialBanner(
+          leading: const Icon(Icons.system_update),
+          content: Text(
+            'Há uma versão nova da WolfCal: ${r.latest} '
+            '(tens a ${r.installed}).',
+          ),
+          actions: [
+            TextButton(
+              onPressed: messenger.hideCurrentMaterialBanner,
+              child: const Text('Mais tarde'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                messenger.hideCurrentMaterialBanner();
+                launchUrl(r.download!, mode: LaunchMode.externalApplication);
+              },
+              icon: const Icon(Icons.download),
+              label: const Text('Descarregar'),
+            ),
+          ],
+        ),
+      );
+    } else if (!silent) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            r.error != null
+                ? 'Não foi possível verificar: ${r.error}.'
+                : 'Tens a versão mais recente (${r.installed}).',
+          ),
+        ),
+      );
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    HomeWidgetSync.openTasks.removeListener(_openTasks);
     super.dispose();
   }
 
@@ -57,6 +124,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   /// Quantas vezes se entrou em Tarefas (a timeline volta a centrar hoje).
   int _taskVisits = 0;
+
+  /// O widget de tarefas pediu para abrir a página Tarefas.
+  void _openTasks() {
+    Navigator.of(context).popUntil((r) => r.isFirst);
+    _goTab(1);
+  }
 
   void _goTab(int i) => setState(() {
     if (i == 1 && _tab != 1) _taskVisits++;
@@ -134,16 +207,28 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             listenable: Listenable.merge([store, store.syncStatus]),
             builder: (context, _) => _SyncIndicator(store: store),
           ),
-          if (widget.onSignOut != null)
+          if (widget.onSignOut != null || updatesSupported)
             PopupMenuButton<String>(
-              onSelected: (_) => _confirmSignOut(),
+              onSelected: (v) =>
+                  v == 'update' ? _checkUpdates() : _confirmSignOut(),
               itemBuilder: (context) => [
                 if (widget.userEmail != null)
                   PopupMenuItem(enabled: false, child: Text(widget.userEmail!)),
-                const PopupMenuItem(
-                  value: 'out',
-                  child: Text('Terminar sessão'),
-                ),
+                if (updatesSupported) ...[
+                  PopupMenuItem(
+                    enabled: false,
+                    child: Text('Versão ${_version ?? '…'}'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'update',
+                    child: Text('Procurar atualizações'),
+                  ),
+                ],
+                if (widget.onSignOut != null)
+                  const PopupMenuItem(
+                    value: 'out',
+                    child: Text('Terminar sessão'),
+                  ),
               ],
             ),
         ],

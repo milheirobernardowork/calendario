@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="tasks_widget_description">Tarefas por fazer</string>
     <string name="widget_description">Calendário: a semana atual e as seguintes</string>
 
     <style name="WolfCalWeekday">

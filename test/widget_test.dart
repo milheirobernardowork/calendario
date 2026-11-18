@@ -1,6 +1,7 @@
 import 'package:agenda/holidays.dart';
 import 'package:agenda/models.dart';
 import 'package:agenda/store.dart';
+import 'package:agenda/updates.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -73,6 +74,7 @@ void main() {
   syncEfficiencyTests();
   suggestionTests();
   holidayTests();
+  updateTests();
   test('alterações propagam-se entre dispositivos', () async {
     final server = FakeRemote();
     final pc = await device(server);
@@ -474,5 +476,14 @@ void holidayTests() {
     expect(s.events, isEmpty);
     s.restoreEvent(e);
     expect(s.events.single.id, e.id);
+  });
+}
+
+void updateTests() {
+  test('comparar versões', () {
+    expect(compareVersions('1.0.10', '1.0.9'), greaterThan(0));
+    expect(compareVersions('v1.0.14', '1.0.14'), 0);
+    expect(compareVersions('1.0.14', '1.1.0'), lessThan(0));
+    expect(compareVersions('1.0.15', '1.0.14+14'), greaterThan(0));
   });
 }

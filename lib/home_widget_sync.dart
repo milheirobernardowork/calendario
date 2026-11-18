@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
 import 'screens/common.dart';
 import 'store.dart';
+import 'task_sections.dart';
 
 /// Prepara os dados do widget do ecrã principal (Android).
 ///
@@ -27,10 +28,22 @@ class HomeWidgetSync {
   static const _weeks = 60;
   Timer? _debounce;
 
+  /// Pedidos do widget de tarefas para abrir a página Tarefas.
+  static final openTasks = ValueNotifier<int>(0);
+
   void init() {
     if (kIsWeb || !Platform.isAndroid) return;
     store.addListener(_soon);
     _soon();
+    // A app foi aberta (ou trazida para a frente) a partir do widget.
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'openTab' && call.arguments == 'tasks') {
+        openTasks.value++;
+      }
+    });
+    _channel.invokeMethod<String>('launchTab').then((tab) {
+      if (tab == 'tasks') openTasks.value++;
+    }, onError: (_) {});
   }
 
   void _soon() {
@@ -63,11 +76,35 @@ class HomeWidgetSync {
         'widget_data',
         jsonEncode({'first': _epochDay(first), 'weeks': _weeks, 'days': days}),
       );
+      await prefs.setString('widget_tasks', jsonEncode(_tasks(today)));
       await _channel.invokeMethod<void>('refresh');
     } catch (e) {
       debugPrint('Widget: $e');
     }
   }
+
+  /// Secções de tarefas para o widget: [[nome, [[título, data, cor da
+  /// prioridade (ARGB, 0 = nenhuma), atrasada (0/1)], ...]], ...].
+  List<Object> _tasks(DateTime today) => [
+    for (final (name, items) in taskSections(store.tasks, today))
+      if (items.isNotEmpty)
+        [
+          name,
+          [
+            for (final t in items)
+              [
+                t.title,
+                t.due == null
+                    ? ''
+                    : t.due == today
+                    ? 'Hoje'
+                    : fmtDate(t.due!),
+                priorityColor(t.priority)?.toARGB32() ?? 0,
+                t.due != null && t.due!.isBefore(today) ? 1 : 0,
+              ],
+          ],
+        ],
+  ];
 
   /// [texto, cor de fundo, cor do texto] (cores em ARGB).
   static List<Object> _event(Event e) {
