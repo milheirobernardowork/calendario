@@ -140,6 +140,7 @@ class Store extends ChangeNotifier {
     _dayCache.clear();
     _eventsCache = null;
     _titlesCache = null;
+    _openTasksByDay = null;
     _singleIndex = null;
     _recurring = null;
     super.notifyListeners();
@@ -309,6 +310,27 @@ class Store extends ChangeNotifier {
   }
 
   void deleteTask(Task t) => _put(_tasks, t, delete: true);
+
+  /// Desfaz a eliminação de uma tarefa.
+  void restoreTask(Task t) {
+    t.deletedAt = null;
+    _put(_tasks, t);
+  }
+
+  Map<DateTime, int>? _openTasksByDay;
+
+  /// Tarefas por concluir com data no dia indicado.
+  int openTasksOn(DateTime day) {
+    final map = _openTasksByDay ??= () {
+      final m = <DateTime, int>{};
+      for (final t in _tasks.values) {
+        if (t.isDeleted || t.done || t.due == null) continue;
+        m[t.due!] = (m[t.due!] ?? 0) + 1;
+      }
+      return m;
+    }();
+    return map[dateOnly(day)] ?? 0;
+  }
 
   /// Desloca um evento [days] dias; com [copy] cria um duplicado e mantém
   /// o original. [from] é o dia de onde foi agarrado: numa série repetida,

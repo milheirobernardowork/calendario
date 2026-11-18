@@ -439,6 +439,36 @@ class _EventEditScreenState extends State<EventEditScreen> {
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          // Botões no topo, sempre à vista.
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              if (widget.event != null)
+                OutlinedButton.icon(
+                  style: bigButton.copyWith(
+                    foregroundColor: WidgetStatePropertyAll(scheme.error),
+                  ),
+                  onPressed: _delete,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Eliminar'),
+                ),
+              OutlinedButton.icon(
+                style: bigButton,
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close),
+                label: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                style: bigButton,
+                onPressed: _valid ? _save : null,
+                icon: const Icon(Icons.check),
+                label: const Text('Guardar'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           _titleField(context),
           const SizedBox(height: 12),
           if (_occurrence != null) ...[
@@ -484,8 +514,6 @@ class _EventEditScreenState extends State<EventEditScreen> {
             ),
           const SizedBox(height: 8),
           if (!_instanceMode) ..._repeatSection(context),
-          const SizedBox(height: 8),
-          _categoryRow(),
           const SizedBox(height: 20),
           Wrap(
             spacing: 12,
@@ -526,7 +554,9 @@ class _EventEditScreenState extends State<EventEditScreen> {
                 ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          _categoryRow(),
+          const SizedBox(height: 16),
           TextField(
             controller: _notes,
             minLines: 3,
@@ -538,34 +568,6 @@ class _EventEditScreenState extends State<EventEditScreen> {
               alignLabelWithHint: true,
               border: OutlineInputBorder(),
             ),
-          ),
-          const SizedBox(height: 24),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              if (widget.event != null)
-                OutlinedButton.icon(
-                  style: bigButton.copyWith(
-                    foregroundColor: WidgetStatePropertyAll(scheme.error),
-                  ),
-                  onPressed: _delete,
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('Eliminar'),
-                ),
-              TextButton(
-                style: bigButton,
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancelar'),
-              ),
-              FilledButton.icon(
-                style: bigButton,
-                onPressed: _valid ? _save : null,
-                icon: const Icon(Icons.check),
-                label: const Text('Guardar'),
-              ),
-            ],
           ),
         ],
       ),

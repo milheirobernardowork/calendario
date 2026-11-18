@@ -288,6 +288,24 @@ class TaskTile extends StatelessWidget {
                   ),
                   onPressed: () => store.toggleActive(task),
                 ),
+                IconButton(
+                  tooltip: 'Eliminar',
+                  icon: Icon(Icons.delete_outline, color: scheme.outline),
+                  onPressed: () {
+                    store.deleteTask(task);
+                    final messenger = ScaffoldMessenger.of(context);
+                    messenger.hideCurrentSnackBar();
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text('"${task.title}" eliminada'),
+                        action: SnackBarAction(
+                          label: 'Anular',
+                          onPressed: () => store.restoreTask(task),
+                        ),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
       onTap: () => openTaskEditor(context, store, task: task),

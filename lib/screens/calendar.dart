@@ -769,6 +769,7 @@ class _CalendarPageState extends State<CalendarPage> {
     final hidden = singles.length - shown + hiddenBars;
     final selected = day == widget.selectedDay;
     final isToday = day == today;
+    final tasks = widget.store.openTasksOn(day);
     final outside = !_continuous && !_weekView && day.month != _focused.month;
 
     return DragTarget<_Drag>(
@@ -779,6 +780,8 @@ class _CalendarPageState extends State<CalendarPage> {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           // Espaço em branco: seleciona o dia e começa um evento novo nele.
+          // Botão direito: seleciona o dia (mostra as tarefas dele no painel).
+          onSecondaryTap: () => _select(day),
           onTap: () async {
             // No telemóvel, tocar num dia mostra os eventos desse dia.
             if (_continuous) {
@@ -807,35 +810,63 @@ class _CalendarPageState extends State<CalendarPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Center(
-                  // O número só seleciona o dia (atualiza o painel lateral).
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _select(day),
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isToday ? scheme.primary : null,
-                      ),
-                      child: Text(
-                        '${day.day}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: selected || isToday
-                              ? FontWeight.w700
-                              : FontWeight.w400,
-                          color: isToday
-                              ? scheme.onPrimary
-                              : outside
-                              ? scheme.outline
-                              : scheme.onSurface,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // O número só seleciona o dia (atualiza o painel lateral).
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _select(day),
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isToday ? scheme.primary : null,
+                        ),
+                        child: Text(
+                          '${day.day}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: selected || isToday
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                            color: isToday
+                                ? scheme.onPrimary
+                                : outside
+                                ? scheme.outline
+                                : scheme.onSurface,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    // Bolinha com o número de tarefas por fazer nesse dia.
+                    if (tasks > 0)
+                      Tooltip(
+                        message: tasks == 1 ? '1 tarefa' : '$tasks tarefas',
+                        child: Container(
+                          margin: const EdgeInsets.only(left: 2),
+                          constraints: const BoxConstraints(minWidth: 15),
+                          height: 15,
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: scheme.tertiary,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$tasks',
+                            style: TextStyle(
+                              fontSize: 9,
+                              height: 1,
+                              fontWeight: FontWeight.w700,
+                              color: scheme.onTertiary,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 2),
                 SizedBox(height: reserved * EventChipBox.extent),
