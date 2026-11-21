@@ -31,6 +31,7 @@ class Store extends ChangeNotifier {
   Store(this._prefs) {
     _load();
     _ensureCorridas();
+    purgeDoneTasks();
   }
 
   static const _tombstoneLifetime = Duration(days: 30);
@@ -437,6 +438,14 @@ class Store extends ChangeNotifier {
     saveTask(t);
   }
 
+  /// As tarefas concluídas são eliminadas (inclui as antigas, que ficaram
+  /// marcadas como concluídas antes desta regra).
+  void purgeDoneTasks() {
+    for (final t in _tasks.values.toList()) {
+      if (t.done && !t.isDeleted) _put(_tasks, t, delete: true);
+    }
+  }
+
   void _put<T extends Record>(Map<String, T> map, T r, {bool delete = false}) {
     final now = DateTime.now().toUtc();
     r.updatedAt = now;
@@ -629,7 +638,13 @@ class Store extends ChangeNotifier {
       await table('categories', _categories, EventColumn.fromJson);
       await table('pages', _pages, WorkPage.fromJson);
       if (failure != null) throw failure!;
-      if (full) _lastFullSync = DateTime.now();
+      if (full) {
+        _lastFullSync = DateTime.now();
+        // Concluídas que tenham vindo de outro dispositivo.
+        if (_tasks.values.any((t) => t.done && !t.isDeleted)) {
+          scheduleMicrotask(purgeDoneTasks);
+        }
+      }
       lastError = null;
       if (_remote == remote) _status = SyncStatus.synced;
     } catch (e) {

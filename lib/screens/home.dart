@@ -190,8 +190,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         MaterialBanner(
           leading: const Icon(Icons.system_update),
           content: Text(
-            'Há uma versão nova da WolfCal: ${r.latest} '
-            '(tens a ${r.installed}).',
+            'Há uma versão nova da WolfCal: ${r.latest}'
+            '${r.latestDate == null ? '' : ', criada a ${fmtBuildDate(r.latestDate!)}'}'
+            ' (tens a ${r.installed}).',
           ),
           actions: [
             TextButton(
@@ -216,7 +217,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           content: Text(
             r.error != null
                 ? 'Não foi possível verificar: ${r.error}.'
-                : 'Tens a versão mais recente (${r.installed}).',
+                : 'Tens a versão mais recente (${r.installed}'
+                      '${buildTime == null ? '' : ', criada a ${fmtBuildDate(buildTime!)}'}).',
           ),
         ),
       );
@@ -339,7 +341,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 if (updatesSupported) ...[
                   PopupMenuItem(
                     enabled: false,
-                    child: Text('Versão ${_version ?? '…'}'),
+                    child: Text(
+                      buildTime == null
+                          ? 'Versão ${_version ?? '…'}'
+                          : 'Versão ${_version ?? '…'}\n'
+                                'criada a ${fmtBuildDate(buildTime!)}',
+                    ),
                   ),
                   const PopupMenuItem(
                     value: 'update',

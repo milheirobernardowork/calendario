@@ -393,7 +393,7 @@ class Task extends Record {
   String title;
   String notes;
 
-  /// Quando foi criada (ordena a secção "Sem data").
+  /// Quando foi criada (ordena a secção "Por Fazer").
   final DateTime createdAt;
 
   /// Marcada como "futura": vai para a secção do fim da lista.

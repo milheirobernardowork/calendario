@@ -65,6 +65,12 @@ class _TaskEditScreenState extends State<TaskEditScreen> {
 
   void _save() {
     if (!_valid) return;
+    // Marcar como concluída elimina a tarefa.
+    if (_done && widget.task != null) {
+      widget.store.deleteTask(widget.task!);
+      Navigator.pop(context);
+      return;
+    }
     widget.store.saveTask(
       Task(
         id: widget.task?.id ?? newId(),

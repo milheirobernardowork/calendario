@@ -15,7 +15,10 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - run: flutter build windows --release --build-name=${{ env.APP_VERSION }} --build-number=${{ github.run_number }}
+      - name: Data da compilação
+        shell: bash
+        run: echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - run: flutter build windows --release --build-name=${{ env.APP_VERSION }} --build-number=${{ github.run_number }} --dart-define=BUILD_TIME=${{ env.BUILD_TIME }}
       - name: Criar instalador
         shell: pwsh
         run: |
@@ -53,7 +56,10 @@ jobs:
           echo "$KEYSTORE" | base64 -d > android/app/upload.jks
           printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=upload.jks\n' \
             "$STORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > android/key.properties
-      - run: flutter build apk --release --build-name=${{ env.APP_VERSION }} --build-number=${{ github.run_number }}
+      - name: Data da compilação
+        shell: bash
+        run: echo "BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - run: flutter build apk --release --build-name=${{ env.APP_VERSION }} --build-number=${{ github.run_number }} --dart-define=BUILD_TIME=${{ env.BUILD_TIME }}
       - run: mv build/app/outputs/flutter-apk/app-release.apk WolfCal.apk
       - name: Confirmar a assinatura (não pode ser a de depuração)
         run: |

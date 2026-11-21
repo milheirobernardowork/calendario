@@ -21,7 +21,7 @@ bool isActiveTask(Task t, DateTime today) {
 }
 
 /// Tarefas por fazer, arrumadas como na lista: Ativas (com ou sem data),
-/// Sem data (mais recentes primeiro) e Futuras. Usado pela página Tarefas,
+/// Por Fazer (sem data, mais recentes primeiro) e Futuras. Usado pela página Tarefas,
 /// pelo painel do calendário e pelo widget.
 List<(String, List<Task>)> taskSections(List<Task> all, DateTime today) {
   final open = all.where((t) => !t.done).toList()..sort(compareTasks);
@@ -30,5 +30,5 @@ List<(String, List<Task>)> taskSections(List<Task> all, DateTime today) {
   final noDate = rest.where((t) => !t.future && t.due == null).toList()
     ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   final future = rest.where((t) => t.future || t.due != null).toList();
-  return [('Ativas', active), ('Sem data', noDate), ('Futuras', future)];
+  return [('Ativas', active), ('Por Fazer', noDate), ('Futuras', future)];
 }

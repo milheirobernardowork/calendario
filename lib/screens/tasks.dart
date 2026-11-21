@@ -30,14 +30,9 @@ class TasksPage extends StatelessWidget {
       builder: (context) {
         final today = dateOnly(DateTime.now());
         final all = store.tasks;
-        final done = all.where((t) => t.done).toList()
-          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-        // Uma coluna por tipo: Ativas, Esta semana, Sem data, Futuras e,
-        // no fim, as Concluídas.
-        final columns = <(String, List<Task>)>[
-          ...taskSections(all, today),
-          ('Concluídas', done),
-        ];
+        // Uma coluna por tipo: Ativas, Por Fazer e Futuras. As concluídas
+        // são eliminadas.
+        final columns = taskSections(all, today);
         return LayoutBuilder(
           builder: (context, box) {
             Widget column(int i) {
@@ -47,9 +42,7 @@ class TasksPage extends StatelessWidget {
                 tasks: items,
                 store: store,
                 today: today,
-                onAdd: name == 'Concluídas'
-                    ? null
-                    : (title) => store.saveTask(_newTask(name, title, today)),
+                onAdd: (title) => store.saveTask(_newTask(name, title, today)),
               );
             }
 
@@ -194,7 +187,7 @@ class TaskTile extends StatelessWidget {
         value: task.done,
         shape: const CircleBorder(),
         side: flag == null ? null : BorderSide(color: flag, width: 2),
-        onChanged: (_) => store.toggleTask(task),
+        onChanged: (_) => completeTask(context, store, task),
       ),
       title: Text(
         task.title,
@@ -330,6 +323,24 @@ class _QuickAddTaskState extends State<QuickAddTask> {
         isDense: true,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
         contentPadding: const EdgeInsets.symmetric(vertical: 10),
+      ),
+    ),
+  );
+}
+
+/// Concluir uma tarefa elimina-a (com "Anular" durante uns segundos).
+void completeTask(BuildContext context, Store store, Task task) {
+  store.deleteTask(task);
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text('"${task.title}" concluída'),
+      persist: false,
+      duration: const Duration(seconds: 4),
+      action: SnackBarAction(
+        label: 'Anular',
+        onPressed: () => store.restoreTask(task),
       ),
     ),
   );

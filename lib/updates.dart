@@ -15,8 +15,12 @@ class UpdateCheck {
     required this.installed,
     this.latest,
     this.download,
+    this.latestDate,
     this.error,
   });
+
+  /// Quando foi publicada a versão mais recente.
+  final DateTime? latestDate;
 
   /// Versão instalada (ex.: "1.0.14").
   final String installed;
@@ -31,6 +35,18 @@ class UpdateCheck {
 
   bool get hasUpdate =>
       latest != null && compareVersions(latest!, installed) > 0;
+}
+
+/// Quando foi compilada esta versão (posto pelo workflow `build`).
+final DateTime? buildTime = DateTime.tryParse(
+  const String.fromEnvironment('BUILD_TIME'),
+)?.toLocal();
+
+/// "21/11/2026 às 15:40".
+String fmtBuildDate(DateTime d) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(d.day)}/${two(d.month)}/${d.year} às '
+      '${two(d.hour)}:${two(d.minute)}';
 }
 
 /// Só faz sentido nas apps instaladas (não na versão web).
@@ -85,6 +101,8 @@ Future<UpdateCheck> checkForUpdate() async {
       installed: installed,
       latest: latest,
       download: download,
+      latestDate: DateTime.tryParse(json['published_at'] as String? ?? '')
+          ?.toLocal(),
     );
   } catch (e) {
     return UpdateCheck(installed: installed, error: 'Sem ligação ao GitHub');

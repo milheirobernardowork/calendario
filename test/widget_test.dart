@@ -79,6 +79,7 @@ void main() {
   updateTests();
   workspaceTests();
   backupTests();
+  doneTaskTests();
   test('alterações propagam-se entre dispositivos', () async {
     final server = FakeRemote();
     final pc = await device(server);
@@ -569,5 +570,18 @@ void backupTests() {
     final titles = [for (final e in data['events'] as List) e['title']];
     expect(titles, ['Recente']); // só ±2 anos
     expect(s.pendingChanges, greaterThan(0)); // vai para o servidor
+  });
+}
+
+void doneTaskTests() {
+  test('tarefas concluídas são eliminadas ao arrancar', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final a = Store(prefs);
+    a.saveTask(task('Feita')..done = true);
+    a.saveTask(task('Por fazer'));
+    await a.flush();
+    final b = Store(prefs);
+    expect(b.tasks.map((t) => t.title), ['Por fazer']);
   });
 }
