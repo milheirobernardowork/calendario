@@ -16,6 +16,9 @@ import 'tasks.dart';
 /// O que é arrastado: o evento e o dia de onde foi agarrado.
 typedef _Drag = ({Event event, DateTime day});
 
+/// Tarefa arrastada dentro do calendário: muda de data.
+typedef _TaskMove = ({Task task});
+
 /// Troço de um evento de vários dias dentro de uma semana: colunas
 /// [from]..[to] e a linha ([lane]) onde é desenhado.
 typedef _Bar = ({Event event, int from, int to, int lane});
@@ -789,12 +792,17 @@ class _CalendarPageState extends State<CalendarPage> {
       onWillAcceptWithDetails: (d) {
         final data = d.data;
         if (data is Task) return true;
+        if (data is _TaskMove) return data.task.due != day;
         return data is _Drag && data.day != day;
       },
       onAcceptWithDetails: (d) {
         final data = d.data;
         if (data is Task) {
           _taskDropped(data, day);
+        } else if (data is _TaskMove) {
+          // Tarefa arrastada para outro dia: muda a data.
+          data.task.due = day;
+          widget.store.saveTask(data.task);
         } else if (data is _Drag) {
           _dropped(data, day);
         }
@@ -1065,22 +1073,13 @@ class _CalendarPageState extends State<CalendarPage> {
     ),
   );
 
-  /// Tarefas marcadas como ativas e tarefas com data no dia selecionado.
+  /// As tarefas ativas (as marcadas como tal e as que têm data), com a data
+  /// por baixo. Podem arrastar-se para um dia do calendário.
   List<Widget> _dayTasks(BuildContext context) {
-    final day = widget.selectedDay;
     final today = dateOnly(DateTime.now());
-    final tasks = widget.store.tasks
-      ..sort((a, b) {
-        if (a.done != b.done) return a.done ? 1 : -1;
-        if (a.priority != b.priority) return b.priority - a.priority;
-        return a.title.toLowerCase().compareTo(b.title.toLowerCase());
-      });
-    // As mesmas "Ativas" da página Tarefas.
-    final active = tasks.where((t) => isActiveTask(t, today)).toList();
-    // As ativas já estão na lista de cima; não repetir.
-    final forDay = tasks
-        .where((t) => t.due == day && !isActiveTask(t, today))
-        .toList();
+    final active =
+        widget.store.tasks.where((t) => isActiveTask(t, today)).toList()
+          ..sort(compareTasks);
     Widget tile(Task t) =>
         TaskTile(task: t, store: widget.store, today: today, compact: true);
     return [
@@ -1093,19 +1092,6 @@ class _CalendarPageState extends State<CalendarPage> {
             id: newId(),
             title: title,
             active: true,
-            updatedAt: DateTime.now().toUtc(),
-          ),
-        ),
-      ),
-      _section(context, 'Tarefas deste dia'),
-      ...forDay.map(tile),
-      QuickAddTask(
-        hint: 'Nova tarefa para ${fmtDateShort(day)}…',
-        onAdd: (title) => widget.store.saveTask(
-          Task(
-            id: newId(),
-            title: title,
-            due: day,
             updatedAt: DateTime.now().toUtc(),
           ),
         ),
@@ -1199,7 +1185,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       width: 250,
                       child: ListView(
                         padding: const EdgeInsets.only(bottom: 88),
-                        children: [_dayHeader(context), ..._dayTasks(context)],
+                        children: _dayTasks(context),
                       ),
                     ),
                   ],
@@ -1497,6 +1483,35 @@ class _TaskChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final color = priorityColor(task.priority) ?? scheme.outline;
+    final chip = _box(context, color, scheme);
+    final child = GestureDetector(onTap: onTap, child: chip);
+    // Arrastar para outro dia muda a data da tarefa (no telemóvel, com toque
+    // longo).
+    final _TaskMove data = (task: task);
+    final feedback = Material(
+      color: Colors.transparent,
+      elevation: 4,
+      child: SizedBox(width: 170, child: _box(context, color, scheme)),
+    );
+    final touch =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    return touch
+        ? LongPressDraggable<Object>(
+            data: data,
+            feedback: feedback,
+            childWhenDragging: Opacity(opacity: 0.35, child: chip),
+            child: child,
+          )
+        : Draggable<Object>(
+            data: data,
+            feedback: feedback,
+            childWhenDragging: Opacity(opacity: 0.35, child: chip),
+            child: child,
+          );
+  }
+
+  Widget _box(BuildContext context, Color color, ColorScheme scheme) {
     return GestureDetector(
       onTap: onTap,
       child: Opacity(

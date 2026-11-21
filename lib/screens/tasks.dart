@@ -328,8 +328,28 @@ class _QuickAddTaskState extends State<QuickAddTask> {
   );
 }
 
-/// Concluir uma tarefa elimina-a (com "Anular" durante uns segundos).
-void completeTask(BuildContext context, Store store, Task task) {
+/// Concluir uma tarefa (depois de confirmar) elimina-a, com "Anular"
+/// durante uns segundos.
+Future<void> completeTask(BuildContext context, Store store, Task task) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialog) => AlertDialog(
+      title: const Text('Concluir tarefa?'),
+      content: Text('"${task.title}" fica concluída e sai da lista.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialog, false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(dialog, true),
+          icon: const Icon(Icons.check),
+          label: const Text('Concluir'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true || !context.mounted) return;
   store.deleteTask(task);
   final messenger = ScaffoldMessenger.of(context);
   messenger.hideCurrentSnackBar();

@@ -11,13 +11,11 @@ int compareTasks(Task a, Task b) {
   return a.title.toLowerCase().compareTo(b.title.toLowerCase());
 }
 
-/// A tarefa está nas "Ativas"? As marcadas como ativas e as que têm data
-/// até daqui a 7 dias (incluindo as atrasadas), a não ser que sejam futuras.
+/// A tarefa está nas "Ativas"? As marcadas como ativas e todas as que têm
+/// data, a não ser que estejam marcadas como futuras.
 bool isActiveTask(Task t, DateTime today) {
   if (t.done || t.future) return false;
-  if (t.active) return true;
-  final weekEnd = DateTime(today.year, today.month, today.day + 7);
-  return t.due != null && !t.due!.isAfter(weekEnd);
+  return t.active || t.due != null;
 }
 
 /// Tarefas por fazer, arrumadas como na lista: Ativas (com ou sem data),
@@ -29,6 +27,6 @@ List<(String, List<Task>)> taskSections(List<Task> all, DateTime today) {
   final rest = open.where((t) => !isActiveTask(t, today)).toList();
   final noDate = rest.where((t) => !t.future && t.due == null).toList()
     ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  final future = rest.where((t) => t.future || t.due != null).toList();
+  final future = rest.where((t) => t.future).toList();
   return [('Ativas', active), ('Por Fazer', noDate), ('Futuras', future)];
 }
