@@ -33,6 +33,9 @@ const eventColorNames = [
   'Lilás',
 ];
 
+/// Cor de um evento novo: verde escuro.
+const defaultEventColor = 8;
+
 Color eventColor(int i) => eventColors[i.clamp(0, eventColors.length - 1)];
 
 const priorityNames = ['Nenhuma', 'Baixa', 'Média', 'Alta'];
@@ -121,7 +124,7 @@ class EventChipBox extends StatelessWidget {
         textScaler: TextScaler.noScaling,
         style: TextStyle(
           // No telemóvel, letra mais pequena para caber mais do nome.
-          fontSize: compact ? 9.5 : 13,
+          fontSize: compact ? 9 : 12,
           letterSpacing: compact ? -0.2 : null,
           height: 1.1,
           color: onColor(color),

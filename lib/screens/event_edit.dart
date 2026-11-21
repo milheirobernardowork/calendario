@@ -121,7 +121,7 @@ class _EventEditScreenState extends State<EventEditScreen> {
       ).add(Duration(hours: hour));
       _end = _start.add(const Duration(hours: 1));
       _allDay = false;
-      _color = 0;
+      _color = defaultEventColor;
       _category = widget.category;
     }
   }

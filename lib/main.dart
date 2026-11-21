@@ -9,6 +9,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'backups.dart';
 import 'config.dart';
 import 'home_widget_sync.dart';
 import 'localizations.dart';
@@ -36,6 +37,7 @@ Future<void> main() async {
   // Depois de a app aparecer, para não atrasar o arranque.
   unawaited(Reminders(store).init());
   HomeWidgetSync(store, prefs).init();
+  Backups.instance = Backups(store, prefs)..init();
 }
 
 class AgendaApp extends StatelessWidget {

@@ -3,8 +3,8 @@ import 'models.dart';
 /// Prefixo do id dos feriados (eventos calculados, nunca gravados).
 const holidayPrefix = 'feriado:';
 
-/// Cor dos feriados: verde escuro (índice em `eventColors`).
-const holidayColor = 8;
+/// Cor dos feriados: lilás (índice em `eventColors`).
+const holidayColor = 9;
 
 extension HolidayEvent on Event {
   bool get isHoliday => id.startsWith(holidayPrefix);

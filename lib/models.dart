@@ -487,3 +487,61 @@ class EventColumn extends Record {
     'deleted_at': deletedAt?.toIso8601String(),
   };
 }
+
+/// Página do Workspace: notas com títulos, texto, listas, tarefas, tabelas
+/// e links, arrumadas em pastas (ex.: "ATEC", "IPS").
+class WorkPage extends Record {
+  WorkPage({
+    required super.id,
+    this.title = '',
+    this.folder = '',
+    this.color = 0,
+    this.position = 0,
+    List<Map<String, dynamic>>? blocks,
+    required super.updatedAt,
+    super.deletedAt,
+    super.dirty,
+  }) : blocks = blocks ?? [];
+
+  String title;
+
+  /// Nome da pasta ('' = sem pasta).
+  String folder;
+
+  /// Índice em `eventColors` (a bolinha ao lado do nome).
+  int color;
+  int position;
+
+  /// Conteúdo: cada bloco é um mapa com `type` (h1, h2, text, bullet, todo,
+  /// table, link) e os campos desse tipo (`text`, `checked`, `url`, `rows`).
+  List<Map<String, dynamic>> blocks;
+
+  factory WorkPage.fromJson(Map<String, dynamic> j) => WorkPage(
+    id: j['id'] as String,
+    title: j['title'] as String? ?? '',
+    folder: j['folder'] as String? ?? '',
+    color: (j['color'] as num?)?.toInt() ?? 0,
+    position: (j['position'] as num?)?.toInt() ?? 0,
+    blocks: [
+      for (final b in (j['blocks'] as List? ?? const []))
+        Map<String, dynamic>.from(b as Map),
+    ],
+    updatedAt: DateTime.parse(j['updated_at'] as String).toUtc(),
+    deletedAt: j['deleted_at'] == null
+        ? null
+        : DateTime.parse(j['deleted_at'] as String).toUtc(),
+    dirty: j['dirty'] as bool? ?? false,
+  );
+
+  @override
+  Map<String, dynamic> toRemote() => {
+    'id': id,
+    'title': title,
+    'folder': folder,
+    'color': color,
+    'position': position,
+    'blocks': blocks,
+    'updated_at': updatedAt.toIso8601String(),
+    'deleted_at': deletedAt?.toIso8601String(),
+  };
+}

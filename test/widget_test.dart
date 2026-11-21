@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:agenda/holidays.dart';
 import 'package:agenda/models.dart';
 import 'package:agenda/store.dart';
@@ -75,6 +77,8 @@ void main() {
   suggestionTests();
   holidayTests();
   updateTests();
+  workspaceTests();
+  backupTests();
   test('alterações propagam-se entre dispositivos', () async {
     final server = FakeRemote();
     final pc = await device(server);
@@ -398,8 +402,8 @@ void syncEfficiencyTests() {
       pc.saveTask(task('T$i'));
     }
     await settle(pc);
-    // Uma sincronização = 3 tabelas.
-    expect(server.partialFetches + server.fullFetches - before, 3);
+    // Uma sincronização = 4 tabelas.
+    expect(server.partialFetches + server.fullFetches - before, 4);
     expect(server.tables['tasks'], hasLength(5));
   });
 }
@@ -420,6 +424,7 @@ void suggestionTests() {
     s.saveEvent(ev('Jantar Nena', now.subtract(const Duration(days: 2))));
     s.saveEvent(ev('Reunião Ginásio', now.subtract(const Duration(days: 5))));
     s.saveEvent(ev('Gin muito no futuro', now.add(const Duration(days: 400))));
+    s.saveEvent(ev('Ginástica antiga', now.subtract(const Duration(days: 90))));
     final r = s.suggestTitles('gina');
     expect(r.map((e) => e.title), ['Ginásio 💪', 'Reunião Ginásio']);
     expect(r.first.start.day, now.subtract(const Duration(days: 1)).day);
@@ -438,6 +443,18 @@ void holidayTests() {
     expect(h[DateTime(2026, 2, 17)], 'Carnaval');
     expect(h[DateTime(2026, 4, 25)], 'Dia da Liberdade');
     expect(h, hasLength(14));
+    // Datas móveis certas em cada ano (Sexta-feira Santa e Corpo de Deus).
+    expect(
+      portugueseHolidays(2027)[DateTime(2027, 3, 26)],
+      'Sexta-feira Santa',
+    );
+    expect(portugueseHolidays(2027)[DateTime(2027, 5, 27)], 'Corpo de Deus');
+    expect(easter(2028), DateTime(2028, 4, 16));
+    expect(
+      portugueseHolidays(2028)[DateTime(2028, 4, 14)],
+      'Sexta-feira Santa',
+    );
+    expect(portugueseHolidays(2028)[DateTime(2028, 6, 15)], 'Corpo de Deus');
   });
 
   test('feriado aparece no dia, verde escuro, sem duplicar', () async {
@@ -448,7 +465,7 @@ void holidayTests() {
     expect(h.title, 'Imaculada Conceição');
     expect(h.color, holidayColor);
     expect(s.events, isEmpty); // não é gravado
-    // Se já houver um evento com o mesmo nome, não aparece duas vezes.
+    // Se já houver um evento com o mesmo nome, aparece só o feriado.
     s.saveEvent(
       Event(
         id: newId(),
@@ -459,7 +476,7 @@ void holidayTests() {
         updatedAt: DateTime.now().toUtc(),
       ),
     );
-    expect(s.eventsOn(DateTime(2026, 12, 25)).single.isHoliday, isFalse);
+    expect(s.eventsOn(DateTime(2026, 12, 25)).single.isHoliday, isTrue);
   });
 
   test('eliminar e anular', () async {
@@ -485,5 +502,58 @@ void updateTests() {
     expect(compareVersions('v1.0.14', '1.0.14'), 0);
     expect(compareVersions('1.0.14', '1.1.0'), lessThan(0));
     expect(compareVersions('1.0.15', '1.0.14+14'), greaterThan(0));
+  });
+}
+
+void workspaceTests() {
+  test('páginas do Workspace sincronizam com blocos e tabelas', () async {
+    final server = FakeRemote();
+    final pc = await device(server);
+    final phone = await device(server);
+    final page = WorkPage(
+      id: newId(),
+      title: 'Erasmus',
+      folder: 'ATEC',
+      color: 2,
+      blocks: [
+        {'id': newId(), 'type': 'h1', 'text': 'Calendário'},
+        {
+          'id': newId(),
+          'type': 'table',
+          'rows': [
+            ['Turmas', 'Início'],
+            ['TEAI + ARMI', '01 Fev'],
+          ],
+        },
+        {'id': newId(), 'type': 'todo', 'text': 'Enviar mail', 'checked': true},
+      ],
+      updatedAt: DateTime.now().toUtc(),
+    );
+    pc.savePage(page);
+    await settle(pc);
+    await phone.sync();
+    final p = phone.pages.single;
+    expect(p.title, 'Erasmus');
+    expect(p.folder, 'ATEC');
+    expect((p.blocks[1]['rows'] as List)[1], ['TEAI + ARMI', '01 Fev']);
+    expect(p.blocks[2]['checked'], isTrue);
+    phone.renameFolder('ATEC', 'ATEC 2026');
+    await settle(phone);
+    await pc.sync();
+    expect(pc.pages.single.folder, 'ATEC 2026');
+  });
+}
+
+void backupTests() {
+  test('cópia de segurança: exportar e repor', () async {
+    final s = await device(null);
+    final t = task('Pagar seguro');
+    s.saveTask(t);
+    final data = jsonDecode(jsonEncode(s.exportData())) as Map<String, dynamic>;
+    s.deleteTask(t);
+    expect(s.tasks, isEmpty);
+    s.importData(data);
+    expect(s.tasks.single.title, 'Pagar seguro');
+    expect(s.pendingChanges, greaterThan(0)); // vai para o servidor
   });
 }

@@ -5,12 +5,16 @@ import '../models.dart';
 import '../store.dart';
 import 'calendar.dart';
 
+import 'dart:io' show File;
+
 import 'package:url_launcher/url_launcher.dart';
 
+import '../backups.dart';
 import '../home_widget_sync.dart';
 import '../updates.dart';
 import 'event_edit.dart';
 import 'events_page.dart';
+import 'workspace.dart';
 import 'task_edit.dart';
 import 'tasks.dart';
 
@@ -57,6 +61,122 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   String? _version;
+
+  /// Janela das cópias de segurança: fazer uma agora ou repor uma antiga.
+  Future<void> _showBackups() async {
+    final backups = Backups.instance;
+    if (backups == null) return;
+    final dir = await backups.folder();
+    var files = await backups.list();
+    if (!mounted) return;
+    String label(File f) {
+      final name = f.uri.pathSegments.last;
+      final m = RegExp(r'(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})')
+          .firstMatch(name);
+      return m == null ? name : '${m[3]}/${m[2]}/${m[1]} às ${m[4]}:${m[5]}';
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialog) => StatefulBuilder(
+        builder: (dialog, setInner) => AlertDialog(
+          title: const Text('Cópias de segurança'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'É feita uma cópia a cada 12 horas enquanto a app está '
+                  'aberta (e ao abrir, se a última for mais antiga). '
+                  'Guardam-se as 14 mais recentes.',
+                ),
+                const SizedBox(height: 8),
+                SelectableText(
+                  dir.path,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(dialog).colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (files.isEmpty) const Text('Ainda não há cópias.'),
+                Flexible(
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      for (final f in files)
+                        ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.inventory_2_outlined),
+                          title: Text(label(f)),
+                          trailing: TextButton(
+                            child: const Text('Repor'),
+                            onPressed: () async {
+                              final ok = await showDialog<bool>(
+                                context: dialog,
+                                builder: (c) => AlertDialog(
+                                  title: const Text('Repor esta cópia?'),
+                                  content: Text(
+                                    'Os eventos, tarefas e páginas da cópia de '
+                                    '${label(f)} voltam a ficar como estavam '
+                                    '(também no servidor). O que foi criado '
+                                    'depois mantém-se.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(c, false),
+                                      child: const Text('Cancelar'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () => Navigator.pop(c, true),
+                                      child: const Text('Repor'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (ok != true) return;
+                              await backups.restore(f);
+                              if (dialog.mounted) Navigator.pop(dialog);
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'Cópia de ${label(f)} reposta.',
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialog),
+              child: const Text('Fechar'),
+            ),
+            FilledButton.icon(
+              icon: const Icon(Icons.save_alt),
+              label: const Text('Fazer cópia agora'),
+              onPressed: () async {
+                await backups.backupNow();
+                final updated = await backups.list();
+                setInner(() => files = updated);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   /// Procura uma versão nova no GitHub. Com [silent], só diz alguma coisa
   /// se houver atualização.
@@ -122,9 +242,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Quantas vezes se entrou em Tarefas (a timeline volta a centrar hoje).
-  int _taskVisits = 0;
-
   /// O widget de tarefas pediu para abrir a página Tarefas.
   void _openTasks() {
     Navigator.of(context).popUntil((r) => r.isFirst);
@@ -132,7 +249,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _goTab(int i) => setState(() {
-    if (i == 1 && _tab != 1) _taskVisits++;
     _tab = i;
   });
 
@@ -191,8 +307,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               onDaySelected: (d) => setState(() => _selectedDay = d),
               onSwipeRight: () => _goTab(1),
             ),
-            TasksPage(store: store, visit: _taskVisits),
+            TasksPage(store: store),
             EventsPage(store: store),
+            WorkspacePage(store: store),
           ].indexed.map((p) {
             // As páginas escondidas não se redesenham a cada alteração.
             return TickerMode(enabled: p.$1 == _tab, child: p.$2);
@@ -201,7 +318,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(const ['Calendário', 'Tarefas', 'Eventos'][_tab]),
+        title: Text(
+          const ['Calendário', 'Tarefas', 'Eventos', 'Workspace'][_tab],
+        ),
         actions: [
           ListenableBuilder(
             listenable: Listenable.merge([store, store.syncStatus]),
@@ -209,8 +328,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           if (widget.onSignOut != null || updatesSupported)
             PopupMenuButton<String>(
-              onSelected: (v) =>
-                  v == 'update' ? _checkUpdates() : _confirmSignOut(),
+              onSelected: (v) => switch (v) {
+                'update' => _checkUpdates(),
+                'backup' => _showBackups(),
+                _ => _confirmSignOut(),
+              },
               itemBuilder: (context) => [
                 if (widget.userEmail != null)
                   PopupMenuItem(enabled: false, child: Text(widget.userEmail!)),
@@ -222,6 +344,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   const PopupMenuItem(
                     value: 'update',
                     child: Text('Procurar atualizações'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'backup',
+                    child: Text('Cópias de segurança'),
                   ),
                 ],
                 if (widget.onSignOut != null)
@@ -256,6 +382,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       selectedIcon: Icon(Icons.emoji_events),
                       label: Text('Eventos'),
                     ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.article_outlined),
+                      selectedIcon: Icon(Icons.article),
+                      label: Text('Workspace'),
+                    ),
                   ],
                 ),
                 const VerticalDivider(width: 1),
@@ -284,15 +415,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   selectedIcon: Icon(Icons.emoji_events),
                   label: 'Eventos',
                 ),
+                NavigationDestination(
+                  icon: Icon(Icons.article_outlined),
+                  selectedIcon: Icon(Icons.article),
+                  label: 'Workspace',
+                ),
               ],
             ),
       // No telemóvel, no calendário cria-se um evento tocando num dia.
-      floatingActionButton: _tab == 0 && MediaQuery.sizeOf(context).width < 600
+      // O Workspace tem os seus próprios botões.
+      floatingActionButton:
+          _tab == 3 || (_tab == 0 && MediaQuery.sizeOf(context).width < 600)
           ? null
           : FloatingActionButton.extended(
               onPressed: _add,
               icon: const Icon(Icons.add),
-              label: Text(const ['Evento', 'Tarefa', 'Evento'][_tab]),
+              label: Text(const ['Evento', 'Tarefa', 'Evento', ''][_tab]),
             ),
     );
   }

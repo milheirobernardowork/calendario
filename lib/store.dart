@@ -39,6 +39,7 @@ class Store extends ChangeNotifier {
   final Map<String, Event> _events = {};
   final Map<String, Task> _tasks = {};
   final Map<String, EventColumn> _categories = {};
+  final Map<String, WorkPage> _pages = {};
 
   Remote? _remote;
   bool _syncing = false;
@@ -71,7 +72,8 @@ class Store extends ChangeNotifier {
   int get pendingChanges =>
       _events.values.where((e) => e.dirty).length +
       _tasks.values.where((t) => t.dirty).length +
-      _categories.values.where((c) => c.dirty).length;
+      _categories.values.where((c) => c.dirty).length +
+      _pages.values.where((p) => p.dirty).length;
 
   /// Liga (ou desliga, com `null`) o servidor.
   set remote(Remote? r) {
@@ -96,8 +98,11 @@ class Store extends ChangeNotifier {
     final byTitle = <String, Event>{};
     for (final e in _events.values) {
       if (e.isDeleted || e.title.trim().isEmpty) continue;
-      // Eventos muito no futuro não contam como "recentes".
-      if (e.start.isAfter(now.add(const Duration(days: 60)))) continue;
+      // Só eventos dos últimos 2 meses (ou marcados para os próximos 2).
+      final from = now.subtract(const Duration(days: 60));
+      final to = now.add(const Duration(days: 60));
+      final when = e.recurrence == null ? e.start : e.nextOccurrence(from);
+      if (when == null || when.isBefore(from) || when.isAfter(to)) continue;
       final key = normalizeText(e.title);
       final other = byTitle[key];
       if (other == null || e.start.isAfter(other.start)) byTitle[key] = e;
@@ -163,6 +168,8 @@ class Store extends ChangeNotifier {
       ? 'events'
       : identical(map, _tasks)
       ? 'tasks'
+      : identical(map, _pages)
+      ? 'pages'
       : 'categories';
 
   void _persistSoon(Iterable<String> keys) {
@@ -216,11 +223,14 @@ class Store extends ChangeNotifier {
       for (final e in _recurring!)
         if (e.occursOn(d)) e,
     ];
-    // Feriado do dia, a não ser que já exista um evento com o mesmo nome.
+    // Feriado do dia. Se já houver um evento com o mesmo nome (ex.: vindo
+    // de outro calendário), mostra-se só o feriado, com a cor dos feriados.
     final holiday = holidayOn(d);
     if (holiday != null) {
       final name = normalizeText(holiday.title);
-      if (!list.any((e) => normalizeText(e.title) == name)) list.add(holiday);
+      list
+        ..removeWhere((e) => !e.multiDay && normalizeText(e.title) == name)
+        ..add(holiday);
     }
     list.sort((a, b) {
       if (a.allDay != b.allDay) return a.allDay ? -1 : 1;
@@ -311,6 +321,41 @@ class Store extends ChangeNotifier {
 
   void deleteTask(Task t) => _put(_tasks, t, delete: true);
 
+  // ------------------------------------------------------------ Workspace
+
+  /// Páginas, pela ordem das pastas e depois da posição.
+  List<WorkPage> get pages =>
+      _pages.values.where((p) => !p.isDeleted).toList()..sort(
+        (a, b) => a.folder != b.folder
+            ? a.folder.toLowerCase().compareTo(b.folder.toLowerCase())
+            : a.position != b.position
+            ? a.position - b.position
+            : a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+      );
+
+  WorkPage? pageById(String? id) {
+    final p = id == null ? null : _pages[id];
+    return p == null || p.isDeleted ? null : p;
+  }
+
+  void savePage(WorkPage p) => _put(_pages, p);
+  void deletePage(WorkPage p) => _put(_pages, p, delete: true);
+
+  void restorePage(WorkPage p) {
+    p.deletedAt = null;
+    _put(_pages, p);
+  }
+
+  /// Muda o nome de uma pasta (em todas as páginas dela).
+  void renameFolder(String from, String to) {
+    for (final p in _pages.values) {
+      if (!p.isDeleted && p.folder == from) {
+        p.folder = to;
+        _put(_pages, p);
+      }
+    }
+  }
+
   /// Desfaz a eliminação de uma tarefa.
   void restoreTask(Task t) {
     t.deletedAt = null;
@@ -397,13 +442,54 @@ class Store extends ChangeNotifier {
     _syncSoon();
   }
 
+  // ------------------------------------------------- cópias de segurança
+
+  /// Todos os dados, para uma cópia de segurança.
+  Map<String, dynamic> exportData() => {
+    'app': 'WolfCal',
+    'version': 1,
+    'created': DateTime.now().toUtc().toIso8601String(),
+    'events': [for (final e in _events.values) e.toRemote()],
+    'tasks': [for (final t in _tasks.values) t.toRemote()],
+    'categories': [for (final c in _categories.values) c.toRemote()],
+    'pages': [for (final p in _pages.values) p.toRemote()],
+  };
+
+  /// Repõe uma cópia: cada registo da cópia volta a ficar como estava e é
+  /// enviado para o servidor como alteração nova. O que não está na cópia
+  /// fica como está.
+  void importData(Map<String, dynamic> data) {
+    final now = DateTime.now().toUtc();
+    void load<T extends Record>(
+      String key,
+      Map<String, T> into,
+      T Function(Map<String, dynamic>) parse,
+    ) {
+      for (final j in (data[key] as List? ?? const [])) {
+        final r = parse(Map<String, dynamic>.from(j as Map))
+          ..updatedAt = now
+          ..dirty = true;
+        into[r.id] = r;
+      }
+    }
+
+    load('events', _events, Event.fromJson);
+    load('tasks', _tasks, Task.fromJson);
+    load('categories', _categories, EventColumn.fromJson);
+    load('pages', _pages, WorkPage.fromJson);
+    _persistSoon(['events', 'tasks', 'categories', 'pages']);
+    notifyListeners();
+    _syncSoon();
+  }
+
   /// Apaga a cópia local (usado ao terminar sessão).
   Future<void> clearLocal() async {
     _events.clear();
     _tasks.clear();
     _categories.clear();
+    _pages.clear();
     _ensureCorridas();
-    _unsaved.addAll(['events', 'tasks', 'categories']);
+    _unsaved.addAll(['events', 'tasks', 'categories', 'pages']);
     await flush();
     notifyListeners();
   }
@@ -431,6 +517,7 @@ class Store extends ChangeNotifier {
     read('events', _events, Event.fromJson);
     read('tasks', _tasks, Task.fromJson);
     read('categories', _categories, EventColumn.fromJson);
+    read('pages', _pages, WorkPage.fromJson);
   }
 
   Future<void> _persist() async {
@@ -446,6 +533,12 @@ class Store extends ChangeNotifier {
       await _prefs.setString(
         'tasks',
         jsonEncode(_tasks.values.map((t) => t.toLocal()).toList()),
+      );
+    }
+    if (keys.contains('pages')) {
+      await _prefs.setString(
+        'pages',
+        jsonEncode(_pages.values.map((p) => p.toLocal()).toList()),
       );
     }
     if (keys.contains('categories')) {
@@ -473,22 +566,30 @@ class Store extends ChangeNotifier {
     full |= last == null || DateTime.now().difference(last) > _fullSyncEvery;
     _syncing = true;
     if (status != SyncStatus.synced) _status = SyncStatus.syncing;
-    var changed = <String>{};
+    final changed = <String>{};
     try {
-      changed = {
-        if (await _syncTable(remote, 'events', _events, Event.fromJson, full))
-          'events',
-        if (await _syncTable(remote, 'tasks', _tasks, Task.fromJson, full))
-          'tasks',
-        if (await _syncTable(
-          remote,
-          'categories',
-          _categories,
-          EventColumn.fromJson,
-          full,
-        ))
-          'categories',
-      };
+      // Cada tabela à parte: se uma falhar (ex.: ainda não existe no
+      // servidor), as outras sincronizam na mesma.
+      Object? failure;
+      Future<void> table<T extends Record>(
+        String name,
+        Map<String, T> local,
+        T Function(Map<String, dynamic>) parse,
+      ) async {
+        try {
+          if (await _syncTable(remote, name, local, parse, full)) {
+            changed.add(name);
+          }
+        } catch (e) {
+          failure ??= e;
+        }
+      }
+
+      await table('events', _events, Event.fromJson);
+      await table('tasks', _tasks, Task.fromJson);
+      await table('categories', _categories, EventColumn.fromJson);
+      await table('pages', _pages, WorkPage.fromJson);
+      if (failure != null) throw failure!;
       if (full) _lastFullSync = DateTime.now();
       lastError = null;
       if (_remote == remote) _status = SyncStatus.synced;

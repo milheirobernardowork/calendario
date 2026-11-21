@@ -6,174 +6,151 @@ import '../task_sections.dart';
 import '../store.dart';
 import 'common.dart';
 import 'task_edit.dart';
-import 'task_timeline.dart';
 
-class TasksPage extends StatefulWidget {
-  const TasksPage({super.key, required this.store, this.visit = 0});
+class TasksPage extends StatelessWidget {
+  const TasksPage({super.key, required this.store});
 
   final Store store;
 
-  /// Muda sempre que se entra na página.
-  final int visit;
+  static const _minColumn = 250.0;
 
-  @override
-  State<TasksPage> createState() => _TasksPageState();
-}
-
-class _TasksPageState extends State<TasksPage> {
-  final _quick = TextEditingController();
-  final _quickFocus = FocusNode();
-  bool _showDone = false;
-  bool _timeline = false;
-
-  @override
-  void dispose() {
-    _quick.dispose();
-    _quickFocus.dispose();
-    super.dispose();
-  }
-
-  void _quickAdd() {
-    final title = _quick.text.trim();
-    if (title.isEmpty) return;
-    widget.store.saveTask(
-      Task(id: newId(), title: title, updatedAt: DateTime.now().toUtc()),
-    );
-    _quick.clear();
-    _quickFocus.requestFocus();
-  }
+  /// Como cria uma tarefa o campo de cada coluna.
+  Task _newTask(String column, String title, DateTime today) => Task(
+    id: newId(),
+    title: title,
+    active: column == 'Ativas',
+    future: column == 'Futuras',
+    due: column == 'Esta semana' ? today : null,
+    updatedAt: DateTime.now().toUtc(),
+  );
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 4),
-          child: SegmentedButton<bool>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(
-                value: false,
-                icon: Icon(Icons.checklist),
-                label: Text('Lista'),
-              ),
-              ButtonSegment(
-                value: true,
-                icon: Icon(Icons.timeline),
-                label: Text('Timeline'),
-              ),
-            ],
-            selected: {_timeline},
-            onSelectionChanged: (s) => setState(() => _timeline = s.first),
-          ),
-        ),
-        Expanded(
-          child: _timeline
-              ? TaskTimeline(store: widget.store, visit: widget.visit)
-              : _list(context),
-        ),
-      ],
-    );
-  }
-
-  Widget _list(BuildContext context) {
     return StoreListener(
-      listenable: widget.store,
+      listenable: store,
       builder: (context) {
         final today = dateOnly(DateTime.now());
-        final all = widget.store.tasks;
+        final all = store.tasks;
         final done = all.where((t) => t.done).toList()
           ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-        final sections = [
-          for (final (name, items) in taskSections(all, today))
-            (name, items, false),
+        // Uma coluna por tipo: Ativas, Esta semana, Sem data, Futuras e,
+        // no fim, as Concluídas.
+        final columns = <(String, List<Task>)>[
+          ...taskSections(all, today),
+          ('Concluídas', done),
         ];
+        return LayoutBuilder(
+          builder: (context, box) {
+            Widget column(int i) {
+              final (name, items) = columns[i];
+              return _TaskColumn(
+                name: name,
+                tasks: items,
+                store: store,
+                today: today,
+                onAdd: name == 'Concluídas'
+                    ? null
+                    : (title) => store.saveTask(_newTask(name, title, today)),
+              );
+            }
 
-        final scheme = Theme.of(context).colorScheme;
-        return Centered(
-          maxWidth: 720,
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 88),
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: TextField(
-                  controller: _quick,
-                  focusNode: _quickFocus,
-                  textCapitalization: TextCapitalization.sentences,
-                  onSubmitted: (_) => _quickAdd(),
-                  decoration: InputDecoration(
-                    hintText: 'Adicionar tarefa…',
-                    prefixIcon: const Icon(Icons.add),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              if (all.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(48),
-                  child: Text(
-                    'Ainda não tens tarefas',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: scheme.outline),
-                  ),
-                ),
-              for (final (name, items, alert) in sections)
-                if (items.isNotEmpty) ...[
-                  _Header(
-                    '$name · ${items.length}',
-                    color: alert ? scheme.error : null,
-                  ),
-                  for (final t in items)
-                    TaskTile(task: t, store: widget.store, today: today),
+            final fits = box.maxWidth / columns.length >= _minColumn;
+            if (fits) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < columns.length; i++)
+                    Expanded(child: column(i)),
                 ],
-              if (done.isNotEmpty) ...[
-                InkWell(
-                  onTap: () => setState(() => _showDone = !_showDone),
-                  child: Row(
-                    children: [
-                      Expanded(child: _Header('Concluídas · ${done.length}')),
-                      Padding(
-                        padding: const EdgeInsets.only(right: 16, top: 8),
-                        child: Icon(
-                          _showDone ? Icons.expand_less : Icons.expand_more,
-                          color: scheme.outline,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (_showDone)
-                  for (final t in done)
-                    TaskTile(task: t, store: widget.store, today: today),
-              ],
-            ],
-          ),
+              );
+            }
+            // Ecrã estreito: uma coluna de cada vez, a deslizar para o lado
+            // (a seguinte espreita à direita).
+            return PageView.builder(
+              controller: PageController(viewportFraction: 0.88),
+              padEnds: false,
+              itemCount: columns.length,
+              itemBuilder: (context, i) => column(i),
+            );
+          },
         );
       },
     );
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header(this.text, {this.color});
+class _TaskColumn extends StatelessWidget {
+  const _TaskColumn({
+    required this.name,
+    required this.tasks,
+    required this.store,
+    required this.today,
+    this.onAdd,
+  });
 
-  final String text;
-  final Color? color;
+  final String name;
+  final List<Task> tasks;
+  final Store store;
+  final DateTime today;
+  final ValueChanged<String>? onAdd;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-      child: Text(
-        text,
-        style: theme.textTheme.labelLarge!.copyWith(
-          color: color ?? theme.colorScheme.onSurfaceVariant,
-        ),
+    final scheme = theme.colorScheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(6, 8, 6, 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    style: theme.textTheme.titleMedium!.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${tasks.length}',
+                  style: TextStyle(color: scheme.outline, fontSize: 15),
+                ),
+              ],
+            ),
+          ),
+          if (onAdd != null) QuickAddTask(hint: 'Nova tarefa…', onAdd: onAdd!),
+          Expanded(
+            child: tasks.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Nada aqui',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: scheme.outline),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.only(bottom: 88),
+                    children: [
+                      for (final t in tasks)
+                        TaskTile(
+                          task: t,
+                          store: store,
+                          today: today,
+                          inColumn: true,
+                        ),
+                    ],
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -187,6 +164,7 @@ class TaskTile extends StatelessWidget {
     required this.store,
     required this.today,
     this.compact = false,
+    this.inColumn = false,
   });
 
   final Task task;
@@ -196,6 +174,9 @@ class TaskTile extends StatelessWidget {
   /// Versão estreita (painel lateral do calendário): sem botões à direita.
   final bool compact;
 
+  /// Numa coluna estreita: botões mais pequenos.
+  final bool inColumn;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -204,9 +185,11 @@ class TaskTile extends StatelessWidget {
     final flag = task.done ? null : priorityColor(task.priority);
     return ListTile(
       dense: compact,
-      horizontalTitleGap: compact ? 4 : null,
+      horizontalTitleGap: compact || inColumn ? 4 : null,
       contentPadding: compact
           ? const EdgeInsets.only(left: 4, right: 12)
+          : inColumn
+          ? const EdgeInsets.only(left: 2, right: 6)
           : null,
       leading: Checkbox(
         value: task.done,
@@ -231,59 +214,68 @@ class TaskTile extends StatelessWidget {
               due == today ? 'Hoje' : fmtDate(due),
               style: TextStyle(color: overdue ? scheme.error : null),
             ),
-      trailing: compact
-          ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (flag != null)
-                  Tooltip(
-                    message:
-                        'Prioridade ${priorityNames[task.priority].toLowerCase()}',
-                    child: Icon(Icons.flag, color: flag, size: 20),
-                  ),
-                IconButton(
-                  tooltip: task.future
-                      ? 'Deixar de ser futura'
-                      : 'Marcar como futura',
-                  isSelected: task.future,
-                  icon: Icon(Icons.schedule, color: scheme.outline),
-                  selectedIcon: Icon(Icons.schedule, color: scheme.primary),
-                  onPressed: () => store.toggleFuture(task),
-                ),
-                IconButton(
-                  tooltip: task.active
-                      ? 'Deixar de ser ativa'
-                      : 'Marcar como ativa',
-                  isSelected: task.active,
-                  icon: Icon(Icons.bolt_outlined, color: scheme.outline),
-                  selectedIcon: const Icon(
-                    Icons.bolt,
-                    color: Color(0xFFF2A100),
-                  ),
-                  onPressed: () => store.toggleActive(task),
-                ),
-                IconButton(
-                  tooltip: 'Eliminar',
-                  icon: Icon(Icons.delete_outline, color: scheme.outline),
-                  onPressed: () {
-                    store.deleteTask(task);
-                    final messenger = ScaffoldMessenger.of(context);
-                    messenger.hideCurrentSnackBar();
-                    messenger.showSnackBar(
-                      SnackBar(
-                        content: Text('"${task.title}" eliminada'),
-                        action: SnackBarAction(
-                          label: 'Anular',
-                          onPressed: () => store.restoreTask(task),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
+      trailing: compact ? null : _buttons(context, scheme, flag),
       onTap: () => openTaskEditor(context, store, task: task),
+    );
+  }
+
+  /// Prioridade e botões Futura / Ativa / Eliminar.
+  Widget _buttons(BuildContext context, ColorScheme scheme, Color? flag) {
+    final row = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (flag != null)
+          Tooltip(
+            message: 'Prioridade ${priorityNames[task.priority].toLowerCase()}',
+            child: Icon(Icons.flag, color: flag, size: inColumn ? 16 : 20),
+          ),
+        IconButton(
+          tooltip: task.future ? 'Deixar de ser futura' : 'Marcar como futura',
+          isSelected: task.future,
+          icon: Icon(Icons.schedule, color: scheme.outline),
+          selectedIcon: Icon(Icons.schedule, color: scheme.primary),
+          onPressed: () => store.toggleFuture(task),
+        ),
+        IconButton(
+          tooltip: task.active ? 'Deixar de ser ativa' : 'Marcar como ativa',
+          isSelected: task.active,
+          icon: Icon(Icons.bolt_outlined, color: scheme.outline),
+          selectedIcon: const Icon(Icons.bolt, color: Color(0xFFF2A100)),
+          onPressed: () => store.toggleActive(task),
+        ),
+        IconButton(
+          tooltip: 'Eliminar',
+          icon: Icon(Icons.delete_outline, color: scheme.outline),
+          onPressed: () {
+            store.deleteTask(task);
+            final messenger = ScaffoldMessenger.of(context);
+            messenger.hideCurrentSnackBar();
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text('"${task.title}" eliminada'),
+                action: SnackBarAction(
+                  label: 'Anular',
+                  onPressed: () => store.restoreTask(task),
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+    if (!inColumn) return row;
+    // Numa coluna estreita, botões mais pequenos para caber o título.
+    return IconButtonTheme(
+      data: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          iconSize: 18,
+          minimumSize: const Size(28, 28),
+          padding: const EdgeInsets.all(4),
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+      child: row,
     );
   }
 }

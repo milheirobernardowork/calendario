@@ -772,9 +772,21 @@ class _CalendarPageState extends State<CalendarPage> {
     final tasks = widget.store.openTasksOn(day);
     final outside = !_continuous && !_weekView && day.month != _focused.month;
 
-    return DragTarget<_Drag>(
-      onWillAcceptWithDetails: (d) => d.data.day != day,
-      onAcceptWithDetails: (d) => _dropped(d.data, day),
+    // Aceita eventos (mover/copiar) e tarefas ativas (passam a evento).
+    return DragTarget<Object>(
+      onWillAcceptWithDetails: (d) {
+        final data = d.data;
+        if (data is Task) return true;
+        return data is _Drag && data.day != day;
+      },
+      onAcceptWithDetails: (d) {
+        final data = d.data;
+        if (data is Task) {
+          _taskDropped(data, day);
+        } else if (data is _Drag) {
+          _dropped(data, day);
+        }
+      },
       builder: (context, candidates, _) {
         final hovering = candidates.isNotEmpty;
         return GestureDetector(
@@ -981,6 +993,65 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
+  /// Tarefa ativa que se pode arrastar para um dia do calendário.
+  Widget Function(Task) _draggableTask(Widget Function(Task) tile) =>
+      (t) => Draggable<Object>(
+        data: t,
+        feedback: Material(
+          color: Colors.transparent,
+          elevation: 4,
+          child: SizedBox(
+            width: 170,
+            child: EventChipBox(
+              event: Event(
+                id: t.id,
+                title: t.title,
+                start: dateOnly(DateTime.now()),
+                end: dateOnly(DateTime.now()),
+                allDay: true,
+                color: defaultEventColor,
+                updatedAt: t.updatedAt,
+              ),
+              day: dateOnly(DateTime.now()),
+              compact: false,
+            ),
+          ),
+        ),
+        childWhenDragging: Opacity(opacity: 0.4, child: tile(t)),
+        child: tile(t),
+      );
+
+  /// Uma tarefa ativa largada num dia passa a evento de dia inteiro, verde
+  /// escuro. A tarefa sai da lista (com "Anular" para desfazer).
+  void _taskDropped(Task t, DateTime day) {
+    final event = Event(
+      id: newId(),
+      title: t.title,
+      notes: t.notes,
+      start: day,
+      end: day,
+      allDay: true,
+      color: defaultEventColor,
+      updatedAt: DateTime.now().toUtc(),
+    );
+    widget.store.saveEvent(event);
+    widget.store.deleteTask(t);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('"${t.title}" passou para ${fmtDayLong(day)}'),
+        action: SnackBarAction(
+          label: 'Anular',
+          onPressed: () {
+            widget.store.deleteEvent(event);
+            widget.store.restoreTask(t);
+          },
+        ),
+      ),
+    );
+  }
+
   Widget _section(BuildContext context, String text) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
     child: Text(
@@ -1009,7 +1080,7 @@ class _CalendarPageState extends State<CalendarPage> {
         TaskTile(task: t, store: widget.store, today: today, compact: true);
     return [
       _section(context, 'Tarefas ativas'),
-      ...active.map(tile),
+      ...active.map(_draggableTask(tile)),
       QuickAddTask(
         hint: 'Nova tarefa ativa…',
         onAdd: (title) => widget.store.saveTask(
