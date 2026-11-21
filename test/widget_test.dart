@@ -549,11 +549,25 @@ void backupTests() {
     final s = await device(null);
     final t = task('Pagar seguro');
     s.saveTask(t);
+    Event at(String title, DateTime d) => Event(
+      id: newId(),
+      title: title,
+      start: d,
+      end: d,
+      allDay: true,
+      updatedAt: DateTime.now().toUtc(),
+    );
+    final now = DateTime.now();
+    s.saveEvent(at('Recente', now.subtract(const Duration(days: 300))));
+    s.saveEvent(at('Muito antigo', DateTime(now.year - 3, 1, 1)));
+    s.saveEvent(at('Muito longe', DateTime(now.year + 3, 1, 1)));
     final data = jsonDecode(jsonEncode(s.exportData())) as Map<String, dynamic>;
     s.deleteTask(t);
     expect(s.tasks, isEmpty);
     s.importData(data);
     expect(s.tasks.single.title, 'Pagar seguro');
+    final titles = [for (final e in data['events'] as List) e['title']];
+    expect(titles, ['Recente']); // só ±2 anos
     expect(s.pendingChanges, greaterThan(0)); // vai para o servidor
   });
 }

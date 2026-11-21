@@ -54,6 +54,11 @@ class AgendaApp extends StatelessWidget {
       brightness: b,
     ),
     useMaterial3: true,
+    // Avisos em baixo com um X para fechar.
+    snackBarTheme: const SnackBarThemeData(
+      showCloseIcon: true,
+      behavior: SnackBarBehavior.floating,
+    ),
     // Título do seletor de data mais pequeno, para "domingo" caber inteiro.
     datePickerTheme: const DatePickerThemeData(
       headerHeadlineStyle: TextStyle(fontSize: 24),

@@ -362,20 +362,26 @@ class Store extends ChangeNotifier {
     _put(_tasks, t);
   }
 
-  Map<DateTime, int>? _openTasksByDay;
+  Map<DateTime, List<Task>>? _openTasksByDay;
 
-  /// Tarefas por concluir com data no dia indicado.
-  int openTasksOn(DateTime day) {
+  /// Tarefas por concluir com data no dia indicado (aparecem no
+  /// calendário), da prioridade mais alta para a mais baixa.
+  List<Task> tasksOn(DateTime day) {
     final map = _openTasksByDay ??= () {
-      final m = <DateTime, int>{};
+      final m = <DateTime, List<Task>>{};
       for (final t in _tasks.values) {
         if (t.isDeleted || t.done || t.due == null) continue;
-        m[t.due!] = (m[t.due!] ?? 0) + 1;
+        (m[t.due!] ??= []).add(t);
+      }
+      for (final list in m.values) {
+        list.sort((a, b) => b.priority - a.priority);
       }
       return m;
     }();
-    return map[dateOnly(day)] ?? 0;
+    return map[dateOnly(day)] ?? const [];
   }
+
+  int openTasksOn(DateTime day) => tasksOn(day).length;
 
   /// Desloca um evento [days] dias; com [copy] cria um duplicado e mantém
   /// o original. [from] é o dia de onde foi agarrado: numa série repetida,
@@ -445,15 +451,48 @@ class Store extends ChangeNotifier {
   // ------------------------------------------------- cópias de segurança
 
   /// Todos os dados, para uma cópia de segurança.
-  Map<String, dynamic> exportData() => {
-    'app': 'WolfCal',
-    'version': 1,
-    'created': DateTime.now().toUtc().toIso8601String(),
-    'events': [for (final e in _events.values) e.toRemote()],
-    'tasks': [for (final t in _tasks.values) t.toRemote()],
-    'categories': [for (final c in _categories.values) c.toRemote()],
-    'pages': [for (final p in _pages.values) p.toRemote()],
-  };
+  /// Só entra o que acontece entre 2 anos atrás e 2 anos à frente:
+  /// eventos nesse intervalo (ou séries com ocorrências nele) e tarefas sem
+  /// data ou com data nele. Colunas e páginas entram todas. O que foi
+  /// eliminado não entra.
+  Map<String, dynamic> exportData() {
+    final now = dateOnly(DateTime.now());
+    final from = DateTime(now.year - 2, now.month, now.day);
+    final to = DateTime(now.year + 2, now.month, now.day);
+    bool inRange(DateTime d) => !d.isBefore(from) && !d.isAfter(to);
+    bool keepEvent(Event e) {
+      if (e.isDeleted) return false;
+      if (e.recurrence == null) {
+        return inRange(dateOnly(e.start)) || inRange(dateOnly(e.end));
+      }
+      final next = e.nextOccurrence(from);
+      return next != null && !next.isAfter(to);
+    }
+
+    return {
+      'app': 'WolfCal',
+      'version': 1,
+      'created': DateTime.now().toUtc().toIso8601String(),
+      'from': from.toIso8601String(),
+      'to': to.toIso8601String(),
+      'events': [
+        for (final e in _events.values)
+          if (keepEvent(e)) e.toRemote(),
+      ],
+      'tasks': [
+        for (final t in _tasks.values)
+          if (!t.isDeleted && (t.due == null || inRange(t.due!))) t.toRemote(),
+      ],
+      'categories': [
+        for (final c in _categories.values)
+          if (!c.isDeleted) c.toRemote(),
+      ],
+      'pages': [
+        for (final p in _pages.values)
+          if (!p.isDeleted) p.toRemote(),
+      ],
+    };
+  }
 
   /// Repõe uma cópia: cada registo da cópia volta a ficar como estava e é
   /// enviado para o servidor como alteração nova. O que não está na cópia

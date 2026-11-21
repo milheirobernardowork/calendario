@@ -20,7 +20,6 @@ class TasksPage extends StatelessWidget {
     title: title,
     active: column == 'Ativas',
     future: column == 'Futuras',
-    due: column == 'Esta semana' ? today : null,
     updatedAt: DateTime.now().toUtc(),
   );
 
@@ -253,6 +252,9 @@ class TaskTile extends StatelessWidget {
             messenger.showSnackBar(
               SnackBar(
                 content: Text('"${task.title}" eliminada'),
+                // Desaparece sozinha ao fim de 4 s (e tem o X para fechar já).
+                persist: false,
+                duration: const Duration(seconds: 4),
                 action: SnackBarAction(
                   label: 'Anular',
                   onPressed: () => store.restoreTask(task),

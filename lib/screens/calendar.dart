@@ -7,8 +7,10 @@ import 'package:flutter/services.dart';
 import '../holidays.dart';
 import '../models.dart';
 import '../store.dart';
+import '../task_sections.dart';
 import 'common.dart';
 import 'event_edit.dart';
+import 'task_edit.dart';
 import 'tasks.dart';
 
 /// O que é arrastado: o evento e o dia de onde foi agarrado.
@@ -21,17 +23,21 @@ typedef _Bar = ({Event event, int from, int to, int lane});
 /// Disposição de uma semana: barras dos eventos de vários dias, linhas
 /// reservadas para elas em cada dia, e os eventos de um só dia.
 class _WeekLayout {
-  _WeekLayout(this.days, this.bars, this.lanesOn, this.singles);
+  _WeekLayout(this.days, this.bars, this.lanesOn, this.singles, this.tasks);
 
   final List<DateTime> days;
   final List<_Bar> bars;
   final List<int> lanesOn;
   final List<List<Event>> singles;
 
+  /// Tarefas com data em cada dia (por baixo dos eventos).
+  final List<List<Task>> tasks;
+
   /// Linhas ocupadas no dia mais cheio.
-  int get rows =>
-      [for (var i = 0; i < 7; i++) lanesOn[i] + singles[i].length]
-          .reduce((a, b) => a > b ? a : b);
+  int get rows => [
+    for (var i = 0; i < 7; i++)
+      lanesOn[i] + singles[i].length + tasks[i].length,
+  ].reduce((a, b) => a > b ? a : b);
 }
 
 class CalendarPage extends StatefulWidget {
@@ -669,7 +675,9 @@ class _CalendarPageState extends State<CalendarPage> {
             if (!e.multiDay) e,
         ],
     ];
-    return _WeekLayout(days, bars, lanesOn, singles);
+    return _WeekLayout(days, bars, lanesOn, singles, [
+      for (final d in days) widget.store.tasksOn(d),
+    ]);
   }
 
   /// Distância do topo da célula à primeira linha de eventos: borda +
@@ -712,6 +720,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       room,
                       layout.lanesOn[i],
                       layout.singles[i],
+                      layout.tasks[i],
                       hiddenBars[i],
                     ),
                   ),
@@ -757,19 +766,22 @@ class _CalendarPageState extends State<CalendarPage> {
     int room,
     int lanes,
     List<Event> singles,
+    List<Task> dayTasks,
     int hiddenBars,
   ) {
     final scheme = Theme.of(context).colorScheme;
     // As primeiras [lanes] linhas ficam para as barras de vários dias.
     final reserved = lanes < room ? lanes : room;
     final free = room - reserved;
-    // Se não couberem todos, a última linha passa a "+N".
-    final fits = singles.length <= free && hiddenBars == 0;
-    final shown = fits ? singles.length : (free - 1).clamp(0, singles.length);
-    final hidden = singles.length - shown + hiddenBars;
+    // Eventos e depois tarefas. Se não couberem, a última linha é "+N".
+    final total = singles.length + dayTasks.length;
+    final fits = total <= free && hiddenBars == 0;
+    final shownTotal = fits ? total : (free - 1).clamp(0, total);
+    final shown = shownTotal < singles.length ? shownTotal : singles.length;
+    final shownTasks = shownTotal - shown;
+    final hidden = total - shownTotal + hiddenBars;
     final selected = day == widget.selectedDay;
     final isToday = day == today;
-    final tasks = widget.store.openTasksOn(day);
     final outside = !_continuous && !_weekView && day.month != _focused.month;
 
     // Aceita eventos (mover/copiar) e tarefas ativas (passam a evento).
@@ -853,31 +865,6 @@ class _CalendarPageState extends State<CalendarPage> {
                         ),
                       ),
                     ),
-                    // Bolinha com o número de tarefas por fazer nesse dia.
-                    if (tasks > 0)
-                      Tooltip(
-                        message: tasks == 1 ? '1 tarefa' : '$tasks tarefas',
-                        child: Container(
-                          margin: const EdgeInsets.only(left: 2),
-                          constraints: const BoxConstraints(minWidth: 15),
-                          height: 15,
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: scheme.tertiary,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '$tasks',
-                            style: TextStyle(
-                              fontSize: 9,
-                              height: 1,
-                              fontWeight: FontWeight.w700,
-                              color: scheme.onTertiary,
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 2),
@@ -898,6 +885,15 @@ class _CalendarPageState extends State<CalendarPage> {
                             event: e,
                             day: day,
                           ),
+                  ),
+                for (final t in dayTasks.take(shownTasks))
+                  _TaskChip(
+                    task: t,
+                    compact: compact,
+                    faded: outside,
+                    onTap: () => _continuous
+                        ? _showDay(day)
+                        : openTaskEditor(context, widget.store, task: t),
                   ),
                 if (hidden > 0 && free > 0)
                   SizedBox(
@@ -953,7 +949,8 @@ class _CalendarPageState extends State<CalendarPage> {
             builder: (context, _) => ListView(
               shrinkWrap: true,
               children: [
-                if (widget.store.eventsOn(day).isEmpty)
+                if (widget.store.eventsOn(day).isEmpty &&
+                    widget.store.tasksOn(day).isEmpty)
                   Padding(
                     padding: const EdgeInsets.all(24),
                     child: Text(
@@ -970,6 +967,14 @@ class _CalendarPageState extends State<CalendarPage> {
                     day: day,
                     store: widget.store,
                     onOpen: () => Navigator.pop(dialog),
+                  ),
+                // Tarefas com data neste dia.
+                for (final t in widget.store.tasksOn(day))
+                  TaskTile(
+                    task: t,
+                    store: widget.store,
+                    today: dateOnly(DateTime.now()),
+                    compact: true,
                   ),
               ],
             ),
@@ -1021,8 +1026,8 @@ class _CalendarPageState extends State<CalendarPage> {
         child: tile(t),
       );
 
-  /// Uma tarefa ativa largada num dia passa a evento de dia inteiro, verde
-  /// escuro. A tarefa sai da lista (com "Anular" para desfazer).
+  /// Uma tarefa ativa largada num dia cria um evento de dia inteiro, verde
+  /// escuro, com o mesmo nome. A tarefa continua na lista.
   void _taskDropped(Task t, DateTime day) {
     final event = Event(
       id: newId(),
@@ -1035,18 +1040,17 @@ class _CalendarPageState extends State<CalendarPage> {
       updatedAt: DateTime.now().toUtc(),
     );
     widget.store.saveEvent(event);
-    widget.store.deleteTask(t);
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: Text('"${t.title}" passou para ${fmtDayLong(day)}'),
+        content: Text('"${t.title}" adicionado a ${fmtDayLong(day)}'),
+        // Desaparece sozinha ao fim de 4 s (e tem o X para fechar já).
+        persist: false,
+        duration: const Duration(seconds: 4),
         action: SnackBarAction(
           label: 'Anular',
-          onPressed: () {
-            widget.store.deleteEvent(event);
-            widget.store.restoreTask(t);
-          },
+          onPressed: () => widget.store.deleteEvent(event),
         ),
       ),
     );
@@ -1071,10 +1075,11 @@ class _CalendarPageState extends State<CalendarPage> {
         if (a.priority != b.priority) return b.priority - a.priority;
         return a.title.toLowerCase().compareTo(b.title.toLowerCase());
       });
-    final active = tasks.where((t) => t.active && !t.done).toList();
+    // As mesmas "Ativas" da página Tarefas.
+    final active = tasks.where((t) => isActiveTask(t, today)).toList();
     // As ativas já estão na lista de cima; não repetir.
     final forDay = tasks
-        .where((t) => t.due == day && !(t.active && !t.done))
+        .where((t) => t.due == day && !isActiveTask(t, today))
         .toList();
     Widget tile(Task t) =>
         TaskTile(task: t, store: widget.store, today: today, compact: true);
@@ -1462,10 +1467,75 @@ void deleteWithUndo(
   messenger.showSnackBar(
     SnackBar(
       content: Text('"${event.title}" eliminado'),
+      // Desaparece sozinha ao fim de 4 s (e tem o X para fechar já).
+      persist: false,
+      duration: const Duration(seconds: 4),
       action: SnackBarAction(
         label: 'Anular',
         onPressed: () => store.restoreEvent(event, recurrence: before),
       ),
     ),
   );
+}
+
+/// Tarefa com data, dentro de um dia do calendário: contorno (na cor da
+/// prioridade) e um círculo, para se distinguir dos eventos.
+class _TaskChip extends StatelessWidget {
+  const _TaskChip({
+    required this.task,
+    required this.compact,
+    required this.onTap,
+    this.faded = false,
+  });
+
+  final Task task;
+  final bool compact;
+  final bool faded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = priorityColor(task.priority) ?? scheme.outline;
+    return GestureDetector(
+      onTap: onTap,
+      child: Opacity(
+        opacity: faded ? 0.55 : 1,
+        child: Container(
+          height: 24,
+          margin: const EdgeInsets.fromLTRB(2, 1, 2, 1),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: color, width: 1.2),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.radio_button_unchecked,
+                size: compact ? 9 : 12,
+                color: color,
+              ),
+              SizedBox(width: compact ? 2 : 4),
+              Expanded(
+                child: Text(
+                  task.title,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.clip,
+                  textScaler: TextScaler.noScaling,
+                  style: TextStyle(
+                    fontSize: compact ? 9 : 12,
+                    height: 1.1,
+                    fontWeight: FontWeight.w500,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
