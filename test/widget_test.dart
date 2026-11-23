@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:agenda/holidays.dart';
 import 'package:agenda/models.dart';
 import 'package:agenda/store.dart';
+import 'package:agenda/task_sections.dart';
 import 'package:agenda/updates.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -80,6 +81,7 @@ void main() {
   workspaceTests();
   backupTests();
   doneTaskTests();
+  taskLinkTests();
   test('alterações propagam-se entre dispositivos', () async {
     final server = FakeRemote();
     final pc = await device(server);
@@ -583,5 +585,38 @@ void doneTaskTests() {
     await a.flush();
     final b = Store(prefs);
     expect(b.tasks.map((t) => t.title), ['Por fazer']);
+  });
+}
+
+void taskLinkTests() {
+  test('tarefas: data, ativas, calendário e mudança de dia ligados', () async {
+    final s = await device(null);
+    final today = DateTime(2026, 11, 23);
+    final t = Task(
+      id: newId(),
+      title: 'Ligar ao Rui',
+      due: DateTime(2026, 11, 19),
+      updatedAt: DateTime.now().toUtc(),
+    );
+    s.saveTask(t);
+    // Com data: aparece no dia do calendário e nas Ativas.
+    expect(s.tasksOn(DateTime(2026, 11, 19)).single.id, t.id);
+    expect(taskSections(s.tasks, today).first.$2.single.id, t.id);
+    // Mudar a data (como ao arrastar): sai do dia antigo, entra no novo.
+    t.due = DateTime(2026, 12, 2);
+    s.saveTask(t);
+    expect(s.tasksOn(DateTime(2026, 11, 19)), isEmpty);
+    expect(s.tasksOn(DateTime(2026, 12, 2)).single.id, t.id);
+    expect(isActiveTask(s.tasks.single, today), isTrue);
+    // Marcada como futura: sai das Ativas, mas continua no calendário.
+    s.toggleFuture(t);
+    final sections = taskSections(s.tasks, today);
+    expect(sections.first.$2, isEmpty);
+    expect(sections.last.$2.single.id, t.id);
+    expect(s.tasksOn(DateTime(2026, 12, 2)).single.id, t.id);
+    // Eliminada (concluída): desaparece de todo o lado.
+    s.deleteTask(t);
+    expect(s.tasksOn(DateTime(2026, 12, 2)), isEmpty);
+    expect(taskSections(s.tasks, today).every((x) => x.$2.isEmpty), isTrue);
   });
 }

@@ -787,11 +787,11 @@ class _CalendarPageState extends State<CalendarPage> {
     final isToday = day == today;
     final outside = !_continuous && !_weekView && day.month != _focused.month;
 
-    // Aceita eventos (mover/copiar) e tarefas ativas (passam a evento).
+    // Aceita eventos (mover/copiar) e tarefas (mudam de data).
     return DragTarget<Object>(
       onWillAcceptWithDetails: (d) {
         final data = d.data;
-        if (data is Task) return true;
+        if (data is Task) return data.due != day;
         if (data is _TaskMove) return data.task.due != day;
         return data is _Drag && data.day != day;
       },
@@ -800,9 +800,7 @@ class _CalendarPageState extends State<CalendarPage> {
         if (data is Task) {
           _taskDropped(data, day);
         } else if (data is _TaskMove) {
-          // Tarefa arrastada para outro dia: muda a data.
-          data.task.due = day;
-          widget.store.saveTask(data.task);
+          _taskDropped(data.task, day);
         } else if (data is _Drag) {
           _dropped(data, day);
         }
@@ -1012,21 +1010,17 @@ class _CalendarPageState extends State<CalendarPage> {
         data: t,
         feedback: Material(
           color: Colors.transparent,
-          elevation: 4,
-          child: SizedBox(
+          child: Container(
             width: 170,
-            child: EventChipBox(
-              event: Event(
-                id: t.id,
-                title: t.title,
-                start: dateOnly(DateTime.now()),
-                end: dateOnly(DateTime.now()),
-                allDay: true,
-                color: defaultEventColor,
-                updatedAt: t.updatedAt,
-              ),
-              day: dateOnly(DateTime.now()),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: _TaskChip(
+              task: t,
               compact: false,
+              draggable: false,
+              onTap: () {},
             ),
           ),
         ),
@@ -1034,31 +1028,28 @@ class _CalendarPageState extends State<CalendarPage> {
         child: tile(t),
       );
 
-  /// Uma tarefa ativa largada num dia cria um evento de dia inteiro, verde
-  /// escuro, com o mesmo nome. A tarefa continua na lista.
+  /// Uma tarefa largada num dia (vinda do painel ou de outro dia do
+  /// calendário) passa a ter essa data: aparece nesse dia e a data muda em
+  /// todo o lado (lista de tarefas, painel, widget).
   void _taskDropped(Task t, DateTime day) {
-    final event = Event(
-      id: newId(),
-      title: t.title,
-      notes: t.notes,
-      start: day,
-      end: day,
-      allDay: true,
-      color: defaultEventColor,
-      updatedAt: DateTime.now().toUtc(),
-    );
-    widget.store.saveEvent(event);
+    if (t.due == day) return;
+    final before = t.due;
+    t.due = day;
+    widget.store.saveTask(t);
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: Text('"${t.title}" adicionado a ${fmtDayLong(day)}'),
+        content: Text('"${t.title}" passou para ${fmtDayLong(day)}'),
         // Desaparece sozinha ao fim de 4 s (e tem o X para fechar já).
         persist: false,
         duration: const Duration(seconds: 4),
         action: SnackBarAction(
           label: 'Anular',
-          onPressed: () => widget.store.deleteEvent(event),
+          onPressed: () {
+            t.due = before;
+            widget.store.saveTask(t);
+          },
         ),
       ),
     );
@@ -1472,7 +1463,11 @@ class _TaskChip extends StatelessWidget {
     required this.compact,
     required this.onTap,
     this.faded = false,
+    this.draggable = true,
   });
+
+  /// `false` na imagem que segue o rato ao arrastar.
+  final bool draggable;
 
   final Task task;
   final bool compact;
@@ -1484,6 +1479,7 @@ class _TaskChip extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final color = priorityColor(task.priority) ?? scheme.outline;
     final chip = _box(context, color, scheme);
+    if (!draggable) return chip;
     final child = GestureDetector(onTap: onTap, child: chip);
     // Arrastar para outro dia muda a data da tarefa (no telemóvel, com toque
     // longo).
@@ -1528,7 +1524,7 @@ class _TaskChip extends StatelessWidget {
             children: [
               Icon(
                 Icons.radio_button_unchecked,
-                size: compact ? 9 : 12,
+                size: compact ? 8 : 10,
                 color: color,
               ),
               SizedBox(width: compact ? 2 : 4),
